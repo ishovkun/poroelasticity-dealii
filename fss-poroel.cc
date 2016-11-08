@@ -265,16 +265,16 @@ namespace Poroelasticity {
     void setup_dofs();
     void set_boundary_conditions();
 
-    void assemble_displacement_system();
-    // void solve_displacement_system();
+    // void assemble_displacement_system();
+    // // void solve_displacement_system();
 
-    void assemble_strain_projection_rhs(std::vector<int> tensor_components);
-    void solve_strain_projection(int component);
+    // void assemble_strain_projection_rhs(std::vector<int> tensor_components);
+    // void solve_strain_projection(int component);
 
-    void get_volumetric_strain();
-    void update_volumetric_strain();
-    void assemble_pressure_residual();
-    void assemble_pressure_jacobian();
+    // void get_volumetric_strain();
+    // void update_volumetric_strain();
+    // void assemble_pressure_residual();
+    // void assemble_pressure_jacobian();
     // void solve_pressure_system();
 
     // void refine_grid();
@@ -284,6 +284,15 @@ namespace Poroelasticity {
     // output_results (cycle);
   }
 
+    template <int dim>
+    void ElasticProblem<dim>::setup_dofs(){
+
+    }
+
+  template <int dim>
+  void ElasticProblem<dim>::run(){
+    setup_dofs();
+  }
 
 }
 
