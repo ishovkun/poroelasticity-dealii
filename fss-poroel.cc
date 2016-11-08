@@ -33,7 +33,7 @@
 #include <array>
 
 
-namespace Poroelasticity {
+namespace PoroElasticity {
   // elastic constants
   double E = 1e6;
   double nu = 0.25;
@@ -263,7 +263,7 @@ namespace Poroelasticity {
     void read_mesh();
 
     void setup_dofs();
-    void set_boundary_conditions();
+    // void set_boundary_conditions();
 
     // void assemble_displacement_system();
     // // void solve_displacement_system();
@@ -281,26 +281,119 @@ namespace Poroelasticity {
     // void output_results(const unsigned int cycle) const;
     // void compute_derived_quantities();
 
-    // output_results (cycle);
-  }
+    TensorIndexer<dim>   tensor_indexer;
+    Triangulation<dim>   triangulation;
 
-    template <int dim>
-    void ElasticProblem<dim>::setup_dofs(){
+    FE_Q<dim>            pressure_fe;
+    DoFHandler<dim>      pressure_dof_handler;
+    ConstraintMatrix     pressure_constraints;
+    SparsityPattern      pressure_sparsity_pattern;
+    SparseMatrix<double> pressure_mass_matrix;
+    SparseMatrix<double> pressure_laplace_matrix;
+    SparseMatrix<double> pressure_jacobian;
+    Vector<double>       pressure_solution, old_pressure_solution;
+    Vector<double>       pressure_system_rhs;
+    std::vector< Vector<double> > pressure_projection_rhs, strains, stresses;
 
-    }
+    FESystem<dim>        displacement_fe;
+    DoFHandler<dim>      displacement_dof_handler;
+    ConstraintMatrix     displacement_constraints;
+    SparsityPattern      displacement_sparsity_pattern;
+    SparseMatrix<double> displacement_system_matrix;
+    Vector<double>       displacement_rhs;
+    Vector<double>       displacement_solution;
+
+    // double               time;
+    // double               time_step;
+    // unsigned int         timestep_number;
+  };
 
   template <int dim>
-  void ElasticProblem<dim>::run(){
+  PoroElasticProblem<dim>::PoroElasticProblem() :
+    displacement_dof_handler(triangulation),
+    displacement_fe(FE_Q<dim>(2), dim),
+    pressure_dof_handler(triangulation),
+    pressure_fe(1)
+  {}
+
+  template <int dim>
+  PoroElasticProblem<dim>::~PoroElasticProblem()
+  {
+    pressure_dof_handler.clear();
+    displacement_dof_handler.clear();
+  }
+
+  template <int dim>
+  void PoroElasticProblem<dim>::setup_dofs()
+  {
+    { // displacement constrains
+      displacement_dof_handler.distribute_dofs(displacement_fe);
+
+      displacement_constraints.clear();
+      DoFTools::make_hanging_node_constraints(displacement_dof_handler,
+                                              displacement_constraints);
+
+      std::vector<ComponentMask> displacement_masks(dim);
+      for (unsigned int comp=0; comp<dim; ++comp){
+        FEValuesExtractors::Scalar displacement_extractor(comp);
+        displacement_masks[comp]
+          = displacement_fe.component_mask(displacement_extractor);
+      }
+    }
+    { // pressure constraints
+      pressure_dof_handler.distribute_dofs(pressure_fe);
+      pressure_constraints.clear();
+      DoFTools::make_hanging_node_constraints(pressure_dof_handler,
+                                              pressure_constraints);
+      pressure_constraints.close();
+    }
+    // create sparsity patterns, init vectors and matrices
+    { // displacement
+      unsigned int displacement_n_dofs = displacement_dof_handler.n_dofs();
+      DynamicSparsityPattern dsp(displacement_n_dofs);
+      DoFTools::make_sparsity_pattern(displacement_dof_handler,
+                                      dsp,
+                                      displacement_constraints,
+                                      /*keep_constrained_dofs = */ true);
+      displacement_sparsity_pattern.copy_from(dsp);
+
+      // matrices
+      displacement_system_matrix.reinit(displacement_sparsity_pattern);
+      displacement_rhs.reinit(displacement_n_dofs);
+      displacement_solution.reinit(displacement_n_dofs);
+    }
+    { // pressure
+      unsigned int pressure_n_dofs = pressure_dof_handler.n_dofs();
+      DynamicSparsityPattern dsp(pressure_n_dofs);
+      DoFTools::make_sparsity_pattern(pressure_dof_handler,
+                                      dsp,
+                                      pressure_constraints,
+                                      /*keep_constrained_dofs = */ true);
+      pressure_sparsity_pattern.copy_from(dsp);
+    }
+  }
+
+  template <int dim>
+  void PoroElasticProblem<dim>::run()
+  {
+    read_mesh();
     setup_dofs();
   }
 
+  template <int dim>
+  void PoroElasticProblem<dim>::read_mesh (){
+	  GridIn<dim> gridin;
+	  gridin.attach_triangulation(triangulation);
+	  std::ifstream f("domain.msh");
+	  gridin.read_msh(f);
+  }
 }
 
 int main () {
   try {
     dealii::deallog.depth_console(0);
 
-    Poroelasticity::PoroElasticProblem<2> poro_elastic_problem_2d;
+    PoroElasticity::PoroElasticProblem<2> poro_elastic_problem_2d;
     poro_elastic_problem_2d.run ();
   }
 
