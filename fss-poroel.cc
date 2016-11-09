@@ -395,6 +395,7 @@ namespace PoroElasticity {
   void PoroElasticProblem<dim>::
   assemble_strain_projection_rhs(std::vector<int> tensor_components)
   {
+    int n_comp = tensor_components.size();
     // assert len(tensor_components) < n_stress_components
     // assert tensor_components[i] < n_stress_components
 	  QGauss<dim>  quadrature_formula(2);
@@ -412,6 +413,10 @@ namespace PoroElasticity {
 
     std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
 
+    std::vector< Vector<double> > cell_rhs(n_comp);
+    for (int c=0; c<n_comp; ++c)
+      cell_rhs[c].reinit(dofs_per_cell);
+
 	  // std::vector< SymmetricTensor<2, dim> > node_strains(n_q_points);
 	  SymmetricTensor<2, dim> strain_tensor;
     std::vector< std::vector<Tensor<1,dim> > >
@@ -424,20 +429,35 @@ namespace PoroElasticity {
       displacement_cell = displacement_dof_handler.begin_active();
 
 	  for (; cell!=endc; ++cell, ++displacement_cell) {
+      // reinit stuff
 		  pressure_fe_values.reinit(cell);
 		  displacement_fe_values.reinit(displacement_cell);
-
       displacement_fe_values.get_function_gradients(displacement_solution,
                                                     displacement_grads);
+      for (int c=0; c<n_comp; ++c) cell_rhs[c] = 0;
+      // fill out local strain rhs values
       for (unsigned int q_point=0; q_point<n_q_points; ++q_point) {
           strain_tensor = get_strain(displacement_grads[q_point]);
-          for (int c=0; c<tensor_components.size(); ++c){
+          for (int c=0; c<n_comp; ++c){
             int comp = tensor_components[c];
             int tensor_component_1 = comp/dim;
             int tensor_component_2 = comp%dim;
-            int rhs_component =
-              tensor_indexer.tensor_to_component_index(comp);
+            double strain_value =
+              strain_tensor[tensor_component_1][tensor_component_2];
+
+            for (int i=0; i<dofs_per_cell; ++i)
+              cell_rhs[c][i] += (pressure_fe_values.shape_value(i, q_point) *
+                                 strain_value *
+                                 pressure_fe_values.JxW(q_point));
           }
+      }
+      // distribute local values to global vectors
+      for (int c=0; c<n_comp; ++c){
+        int rhs_component =
+          tensor_indexer.tensor_to_component_index(tensor_components[c]);
+        pressure_constraints.distribute_local_to_global
+          (cell_rhs[c], local_dof_indices,
+           pressure_projection_rhs[rhs_component]);
       }
     }
   }
