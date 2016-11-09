@@ -303,7 +303,10 @@ namespace PoroElasticity {
     SparseMatrix<double> displacement_system_matrix;
     Vector<double>       displacement_rhs, displacement_solution;
     BoundaryConditions<dim> displacement_boundary_conditions;
-
+    SymmetricTensor<4, dim> get_gassman_tensor(double lambda, double mu);
+    SymmetricTensor<2, dim> local_strain_tensor(FEValues<dim> &fe_values,
+                                                const unsigned int shape_func,
+                                                const unsigned int q_point);
     // double               time;
     // double               time_step;
     // unsigned int         timestep_number;
@@ -325,6 +328,39 @@ namespace PoroElasticity {
     displacement_dof_handler.clear();
   }
 
+  // --------------------- Gassman & Strain Tensors --------------------------
+  template <int dim> inline
+  SymmetricTensor<4, dim> PoroElasticProblem<dim>::
+  get_gassman_tensor(double lambda, double mu){
+	  SymmetricTensor<4, dim> tmp;
+	  for (unsigned int i=0; i<dim; ++i)
+		  for (unsigned int j=0; j<dim; ++j)
+			  for (unsigned int k=0; k<dim; ++k)
+				  for (unsigned int l=0; l<dim; ++l)
+					  tmp[i][j][k][l] = (((i==k) && (j==l) ? mu : 0.0) +
+					  	  	  	  	  	 ((i==l) && (j==k) ? mu : 0.0) +
+                               ((i==j) && (k==l) ? lambda : 0.0));
+	  return tmp;
+  }
+
+  template <int dim>
+  inline SymmetricTensor<2,dim>
+  PoroElasticProblem<dim>::local_strain_tensor(FEValues<dim> &fe_values,
+                                               const unsigned int shape_func,
+                                               const unsigned int q_point) {
+	  SymmetricTensor<2,dim> tmp;
+	  tmp = 0;
+	  for (unsigned int i=0; i<dim; ++i){
+		  tmp[i][i] += fe_values.shape_grad_component(shape_func, q_point, i)[i];
+      for(unsigned int j=0; j<dim;++j){
+        tmp[i][j] =
+          (fe_values.shape_grad_component(shape_func, q_point, i)[j] +
+           fe_values.shape_grad_component(shape_func,q_point,j)[i])/2;
+      }
+	  }
+	  return tmp;
+  }
+
   template <int dim>
   void PoroElasticProblem<dim>::setup_dofs()
   {
@@ -341,6 +377,21 @@ namespace PoroElasticity {
         displacement_masks[comp]
           = displacement_fe.component_mask(displacement_extractor);
       }
+      unsigned int n_dirichlet_conditions =
+        displacement_dirichlet_labels.size();
+
+      for (unsigned int cond=0; cond<n_dirichlet_conditions; ++cond){
+        unsigned int component = displacement_dirichlet_components[cond];
+        double dirichlet_value = displacement_dirichlet_values[cond];
+        VectorTools::interpolate_boundary_values
+          (displacement_dof_handler,
+           displacement_dirichlet_labels[cond],
+           ConstantFunction<dim>(dirichlet_value, dim),
+           displacement_constraints,
+           displacement_masks[component]);
+      }
+      displacement_constraints.close ();
+
     }
     { // pressure constraints
       pressure_dof_handler.distribute_dofs(pressure_fe);
@@ -415,6 +466,8 @@ namespace PoroElasticity {
                                      update_quadrature_points |
                                      update_normal_vectors |
                                      update_JxW_values);
+    DisplacementRightHandSide<dim>  right_hand_side;
+
     // fe parameters
     const unsigned int dofs_per_cell = displacement_fe.dofs_per_cell;
     const unsigned int n_q_points = quadrature_formula.size();
@@ -428,14 +481,55 @@ namespace PoroElasticity {
                                              Vector<double>(dim));
     SymmetricTensor<2,dim>	strain_tensor_i;
     SymmetricTensor<2,dim>	strain_tensor_j;
-    SymmetricTensor<4,dim>	gassman_tensor;
+    SymmetricTensor<4,dim> gassman_tensor =
+      get_gassman_tensor(lame_constant, shear_modulus);
     Tensor<1,dim>	neumann_bc_vector;
+    // store pressure values
+    std::vector<double> pressure_values(n_q_points);
 
     // iterators
     typename DoFHandler<dim>::active_cell_iterator
       cell = displacement_dof_handler.begin_active(),
       endc = displacement_dof_handler.end(),
-      pressure_cell = pressure_dof_handler.end();
+      pressure_cell = pressure_dof_handler.begin_active();
+
+    for (; cell!=endc; ++cell, ++pressure_cell){
+      cell_matrix = 0;
+      cell_rhs = 0;
+      displacement_fe_values.reinit(cell);
+      pressure_fe_values.reinit(pressure_cell);
+      pressure_fe_values.get_function_values(pressure_solution,
+                                             pressure_values);
+      right_hand_side.vector_value_list
+        (displacement_fe_values.get_quadrature_points(), rhs_values);
+
+      for (unsigned int i=0; i<dofs_per_cell; ++i){
+        // Assemble system matrix
+        for (unsigned int j=0; j<dofs_per_cell; ++j){
+          for (unsigned int q_point=0; q_point<n_q_points; ++q_point){
+            strain_tensor_i =
+              local_strain_tensor(displacement_fe_values, i, q_point);
+            strain_tensor_j =
+              local_strain_tensor(displacement_fe_values, j, q_point);
+            cell_matrix(i,j) +=
+              gassman_tensor*strain_tensor_i *
+              strain_tensor_j *
+              displacement_fe_values.JxW(q_point);
+          }
+        }
+        // assemble RHS
+        const unsigned int
+          component_i = displacement_fe.system_to_component_index(i).first;
+
+        for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
+          cell_rhs(i) +=
+            displacement_fe_values.shape_value(i, q_point) *
+            (rhs_values[q_point](component_i) -
+             biot_coef*pressure_values[q_point]          ) *
+            displacement_fe_values.JxW(q_point);
+      }
+
+    }
 
   }
 
