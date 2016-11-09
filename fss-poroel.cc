@@ -273,7 +273,7 @@ namespace PoroElasticity {
     void solve_strain_projection(int rhs_component);
 
     void get_volumetric_strain();
-    // void update_volumetric_strain();
+    void update_volumetric_strain();
     void assemble_pressure_residual();
     void assemble_pressure_jacobian();
     void solve_pressure_system();
@@ -807,7 +807,20 @@ namespace PoroElasticity {
   template <int dim>
   void PoroElasticProblem<dim>::get_volumetric_strain()
   {
+    volumetric_strain = 0;
+    for(const auto &comp : strain_rhs_volumetric_components) {
+      volumetric_strain += strains[comp];
+    }
   }
+
+  template <int dim>
+  void PoroElasticProblem<dim>::update_volumetric_strain()
+  {
+    pressure_tmp1 = pressure_update;
+    pressure_tmp1 *= (biot_coef/k_drained);
+    volumetric_strain += pressure_tmp1;
+  }
+
 
   template <int dim>
   void PoroElasticProblem<dim>::set_boundary_conditions()
@@ -840,25 +853,31 @@ namespace PoroElasticity {
     read_mesh();
     setup_dofs();
 
-    assemble_pressure_jacobian();
-    assemble_pressure_residual();
-    solve_pressure_system();
-    pressure_solution += pressure_update;
+    double time = 0;
+    unsigned int time_step_number = 0;
+    while (time < time_step){
+      get_volumetric_strain();
+      update_volumetric_strain();
 
-    assemble_displacement_system_matrix();
-    assemble_displacement_rhs();
-    solve_displacement_system();
+      assemble_pressure_jacobian();
+      assemble_pressure_residual();
+      solve_pressure_system();
+      pressure_solution += pressure_update;
 
-    // compute strains
-    std::vector<int> strain_tensor_components = {0, 2};
-    assemble_strain_projection_rhs(strain_tensor_components);
+      assemble_displacement_system_matrix();
+      assemble_displacement_rhs();
+      solve_displacement_system();
 
-    for(const auto &comp : strain_tensor_components ) {
-      int strain_rhs_component =
-        tensor_indexer.tensor_to_component_index(comp);
-      solve_strain_projection(strain_rhs_component);
+      // compute strains
+      std::vector<int> strain_tensor_components = {0, 2};
+      assemble_strain_projection_rhs(strain_tensor_components);
+
+      for(const auto &comp : strain_tensor_components ) {
+        int strain_rhs_component =
+          tensor_indexer.tensor_to_component_index(comp);
+        solve_strain_projection(strain_rhs_component);
+      }
     }
-
 
   }
 
@@ -870,6 +889,8 @@ namespace PoroElasticity {
 	  std::ifstream f("domain.msh");
 	  gridin.read_msh(f);
   }
+
+  // end of namespace
 }
 
 int main () {
