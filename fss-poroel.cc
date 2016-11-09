@@ -263,13 +263,13 @@ namespace PoroElasticity {
     void read_mesh();
 
     void setup_dofs();
-    // void set_boundary_conditions();
+    void set_boundary_conditions();
 
-    // void assemble_displacement_system();
+    void assemble_displacement_system();
     // // void solve_displacement_system();
 
     void assemble_strain_projection_rhs(std::vector<int> tensor_components);
-    // void solve_strain_projection(int component);
+    void solve_strain_projection(int rhs_component);
 
     // void get_volumetric_strain();
     // void update_volumetric_strain();
@@ -294,6 +294,7 @@ namespace PoroElasticity {
     Vector<double>       pressure_solution, pressure_old_solution,
                          pressure_residual;
     std::vector< Vector<double> > pressure_projection_rhs, strains, stresses;
+    BoundaryConditions<dim> pressure_boundary_conditions;
 
     FESystem<dim>        displacement_fe;
     DoFHandler<dim>      displacement_dof_handler;
@@ -301,6 +302,7 @@ namespace PoroElasticity {
     SparsityPattern      displacement_sparsity_pattern;
     SparseMatrix<double> displacement_system_matrix;
     Vector<double>       displacement_rhs, displacement_solution;
+    BoundaryConditions<dim> displacement_boundary_conditions;
 
     // double               time;
     // double               time_step;
@@ -375,6 +377,12 @@ namespace PoroElasticity {
       pressure_jacobian.reinit(pressure_sparsity_pattern);
       pressure_mass_matrix.reinit(pressure_sparsity_pattern);
       pressure_laplace_matrix.reinit(pressure_sparsity_pattern);
+      MatrixCreator::create_mass_matrix(pressure_dof_handler,
+                                        QGauss<dim>(pressure_fe.degree+1),
+                                        pressure_mass_matrix);
+      MatrixCreator::create_laplace_matrix(pressure_dof_handler,
+                                           QGauss<dim>(pressure_fe.degree+1),
+                                           pressure_laplace_matrix);
 
       pressure_solution.reinit(pressure_n_dofs);
       pressure_old_solution.reinit(pressure_n_dofs);
@@ -392,13 +400,54 @@ namespace PoroElasticity {
   }
 
   template <int dim>
+  void PoroElasticProblem<dim>:: assemble_displacement_system(){
+    QGauss<dim>  quadrature_formula(displacement_fe.degree+1);
+    QGauss<dim-1>  face_quadrature_formula(displacement_fe.degree+1);
+    FEValues<dim> displacement_fe_values(displacement_fe, quadrature_formula,
+                                         update_values | update_gradients |
+                                         update_quadrature_points |
+                                         update_JxW_values);
+    FEValues<dim> pressure_fe_values(pressure_fe, quadrature_formula,
+                                     update_values |
+                                     update_quadrature_points);
+    FEFaceValues<dim> fe_face_values(pressure_fe, face_quadrature_formula,
+                                     update_values |
+                                     update_quadrature_points |
+                                     update_normal_vectors |
+                                     update_JxW_values);
+    // fe parameters
+    const unsigned int dofs_per_cell = displacement_fe.dofs_per_cell;
+    const unsigned int n_q_points = quadrature_formula.size();
+    const unsigned int n_face_q_points = face_quadrature_formula.size();
+
+    // local vectors & matrices
+    std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
+    FullMatrix<double> cell_matrix(dofs_per_cell, dofs_per_cell);
+    Vector<double> cell_rhs(dofs_per_cell);
+    std::vector< Vector<double> > rhs_values(n_q_points,
+                                             Vector<double>(dim));
+    SymmetricTensor<2,dim>	strain_tensor_i;
+    SymmetricTensor<2,dim>	strain_tensor_j;
+    SymmetricTensor<4,dim>	gassman_tensor;
+    Tensor<1,dim>	neumann_bc_vector;
+
+    // iterators
+    typename DoFHandler<dim>::active_cell_iterator
+      cell = displacement_dof_handler.begin_active(),
+      endc = displacement_dof_handler.end(),
+      pressure_cell = pressure_dof_handler.end();
+
+  }
+
+
+  template <int dim>
   void PoroElasticProblem<dim>::
   assemble_strain_projection_rhs(std::vector<int> tensor_components)
   {
     int n_comp = tensor_components.size();
     // assert len(tensor_components) < n_stress_components
     // assert tensor_components[i] < n_stress_components
-	  QGauss<dim>  quadrature_formula(2);
+	  QGauss<dim>  quadrature_formula(pressure_fe.degree+1);
 	  FEValues<dim> pressure_fe_values(pressure_fe, quadrature_formula,
                                      update_values |
                                      update_quadrature_points |
@@ -453,6 +502,7 @@ namespace PoroElasticity {
       }
       // distribute local values to global vectors
       for (int c=0; c<n_comp; ++c){
+        // indices of pressure_rhs vector differ from those in strain tensor
         int rhs_component =
           tensor_indexer.tensor_to_component_index(tensor_components[c]);
         pressure_constraints.distribute_local_to_global
@@ -463,11 +513,64 @@ namespace PoroElasticity {
   }
 
   template <int dim>
+  void PoroElasticProblem<dim>::solve_strain_projection(int rhs_component)
+  {
+    auto rhs_vector = pressure_projection_rhs[rhs_component];
+    auto solution_vector = strains[rhs_component];
+    SolverControl solver_control(1000, 1e-8 * rhs_vector.l2_norm());
+    SolverCG<> cg(solver_control);
+    PreconditionSSOR<> preconditioner;
+    preconditioner.initialize(pressure_mass_matrix, 1.0);
+    cg.solve(pressure_mass_matrix, solution_vector, rhs_vector,
+             preconditioner);
+    pressure_constraints.distribute(solution_vector);
+    std::cout << "     "
+              << "Projection component: "
+              << rhs_component
+              << " CG iterations: "
+              << solver_control.last_step()
+              << std::endl;
+  }
+
+  template <int dim>
+  void PoroElasticProblem<dim>::set_boundary_conditions()
+  {
+    displacement_boundary_conditions.set_dirichlet
+      (displacement_dirichlet_labels,
+       displacement_dirichlet_components,
+       displacement_dirichlet_values);
+
+    displacement_boundary_conditions.set_neumann
+      (displacement_neumann_labels,
+       displacement_neumann_components,
+       displacement_neumann_values);
+
+    pressure_boundary_conditions.set_dirichlet
+      (pressure_dirichlet_labels,
+       pressure_dirichlet_components,
+       pressure_dirichlet_values);
+
+    pressure_boundary_conditions.set_neumann
+      (pressure_neumann_labels,
+       pressure_neumann_components,
+       pressure_neumann_values);
+  }
+
+  template <int dim>
   void PoroElasticProblem<dim>::run()
   {
+    set_boundary_conditions();
     read_mesh();
     setup_dofs();
-    assemble_strain_projection_rhs({0, 2});
+    std::vector<int> strain_tensor_components = {0, 2};
+    assemble_strain_projection_rhs(strain_tensor_components);
+
+    for(const auto &comp : strain_tensor_components ) {
+        int strain_rhs_component =
+          tensor_indexer.tensor_to_component_index(comp);
+        solve_strain_projection(strain_rhs_component);
+    }
+    assemble_displacement_system();
   }
 
   template <int dim>
