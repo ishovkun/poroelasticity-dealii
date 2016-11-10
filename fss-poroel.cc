@@ -1,4 +1,4 @@
-#include <deal.II/base/quadrature_lib.h>
+
 #include <deal.II/base/function.h>
 #include <deal.II/base/logstream.h>
 #include <deal.II/lac/vector.h>
@@ -187,7 +187,7 @@ namespace PoroElasticity {
   // --------------------- Compute local strain ------------------------------
   template <int dim>
   inline SymmetricTensor<2,dim>
-  get_strain (const std::vector<Tensor<1,dim> > &grad)
+  get_local_strain (const std::vector<Tensor<1,dim> > &grad)
   {
     Assert (grad.size() == dim, ExcInternalError());
     SymmetricTensor<2,dim> strain;
@@ -278,16 +278,16 @@ namespace PoroElasticity {
 
     void assemble_strain_projection_rhs(std::vector<int> tensor_components);
     void solve_strain_projection(int rhs_component);
+    void get_effective_stresses();
+    void get_total_stresses(std::vector<int> tensor_components);
 
     void get_volumetric_strain();
     void update_volumetric_strain();
     void assemble_pressure_residual();
     void assemble_pressure_jacobian();
     void solve_pressure_system();
-
+    void output_results(const unsigned int time_step_number);
     // void refine_grid();
-    void output_results(unsigned int time_step_number) const;
-    // void compute_derived_quantities();
 
     TensorIndexer<dim>            tensor_indexer;
     Triangulation<dim>            triangulation;
@@ -318,9 +318,9 @@ namespace PoroElasticity {
                                                 const unsigned int shape_func,
                                                 const unsigned int q_point);
     PressureSourceTerm<dim>       pressure_source_term_function;
-    int n_stress_component = 0.5*(dim*dim + dim);
     std::vector<int>              strain_tensor_volumetric_components,
                                   strain_rhs_volumetric_components;
+    int                           n_stress_component;
   };
 
   template <int dim>
@@ -330,6 +330,7 @@ namespace PoroElasticity {
     pressure_dof_handler(triangulation),
     pressure_fe(1)
   {
+    n_stress_component = 0.5*(dim*dim + dim);
     switch (dim) {
     case 1:
       strain_tensor_volumetric_components = {0};
@@ -698,7 +699,7 @@ namespace PoroElasticity {
       for (int c=0; c<n_comp; ++c) cell_rhs[c] = 0;
       // fill out local strain rhs values
       for (unsigned int q_point=0; q_point<n_q_points; ++q_point) {
-          strain_tensor = get_strain(displacement_grads[q_point]);
+          strain_tensor = get_local_strain(displacement_grads[q_point]);
           for (int c=0; c<n_comp; ++c){
             int comp = tensor_components[c];
             int tensor_component_1 = comp/dim;
@@ -838,9 +839,51 @@ namespace PoroElasticity {
   }
 
   template <int dim>
+  void PoroElasticProblem<dim>::
+  get_effective_stresses()
+  {
+    SymmetricTensor<2,dim> node_strain_tensor, node_stress_tensor;
+    SymmetricTensor<4,dim> gassman_tensor =
+      get_gassman_tensor(lame_constant, shear_modulus);
+
+    // iterate over nodes
+    unsigned int pressure_n_dofs = pressure_dof_handler.n_dofs();
+    for (unsigned int l=0; l<pressure_n_dofs; ++l)
+      {
+        // iterate over components within each node
+        for (int i=0; i<dim; ++i){
+          // note that j is from i to dim since the tensor is symmetric
+          for (int j=i; j<dim; ++j){
+            int strain_component =
+              tensor_indexer.tensor_to_component_index(i*dim + j);
+            double strain_value = strains[strain_component][l];
+            node_strain_tensor[i][j] = strain_value;
+            // since it's symmetric
+            if (i != j) node_strain_tensor[j][i] = strain_value;
+          }
+        }
+        node_stress_tensor = gassman_tensor*node_strain_tensor;
+        // distribute node stress tensor values to global vectors
+        for (int i=0; i<dim; ++i){
+          for (int j=i; j<dim; ++j){
+            int stress_component =
+              tensor_indexer.tensor_to_component_index(i*dim + j);
+            stresses[stress_component][l] = node_stress_tensor[i][j];
+          }
+        }
+    }
+  }
+
+  template <int dim>
   void PoroElasticProblem<dim>::output_results(const unsigned int time_step_number)
   {
+    std::string filename = "solution-";
+    filename += time_step_number;
+    filename += ".vtk";
+    std::ofstream output (filename.c_str());
 
+    // DataOut<dim> data_out;
+    // data_out.attach_dof_handler (dof_handler);
   }
 
   template <int dim>
@@ -939,9 +982,16 @@ namespace PoroElasticity {
           pressure_error = pressure_residual.l2_norm();
           std::cout << "        Error: " << pressure_error << std::endl;
       }
-    }
+      // compute all strains
+      // for(const auto &comp : strain_tensor_volumetric_components ) {
+      //   int strain_rhs_component =
+      //     tensor_indexer.tensor_to_component_index(comp);
+      //   solve_strain_projection(strain_rhs_component);
+      get_effective_stresses();
 
-  }
+      // output_results(time_step_number);
+      }
+    }
 
   template <int dim>
   void PoroElasticProblem<dim>::read_mesh ()
@@ -954,6 +1004,7 @@ namespace PoroElasticity {
 
   // end of namespace
 }
+
 
 int main () {
   try {
