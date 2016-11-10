@@ -35,19 +35,26 @@
 
 namespace PoroElasticity {
   // elastic constants
-  double E = 1e6;
+  double E = 7e9;
   double nu = 0.25;
-  double m_modulus = 1e6;
   double biot_coef =0.9;
-  double k_drained = 1;
+  double k_drained = 1e6;
   double permeability = 1e-12;
+  double initial_porosity = 30;
   double viscosity = 1e-3;
+  double fluid_compressibility = 0.00689475729;  // 1e-6 psi
   double time_step = 0.1;
   double r_well = 1;
+  double flow_rate = 1e-6;
+  double t_max = 10;
 
   double lame_constant = E*nu/((1.+nu)*(1.-2.*nu));
   double shear_modulus = 0.5*E/(1+nu);
-  double t_max = 10;
+  double bulk_modulus = lame_constant + 2./3.*shear_modulus;
+  double grain_bulk_modulus = bulk_modulus/(1 - bulk_modulus);
+  double n_modulus = grain_bulk_modulus/(biot_coef - initial_porosity);
+  double m_modulus = (n_modulus/fluid_compressibility) /
+    (n_modulus*initial_porosity + 1./fluid_compressibility);
 
   unsigned int bottom = 0, right = 1, top = 2, left = 3, wellbore = 4;
 
@@ -173,7 +180,7 @@ namespace PoroElasticity {
     // if ((p[0] > 1) && (p[1] > -0.5))
     double r_squared = p[0]*p[0] + p[1]*p[1];
     if (r_squared <= r_well*r_well)
-      return 1;
+      return flow_rate;
     else
       return 0;
   }
@@ -279,7 +286,7 @@ namespace PoroElasticity {
     void solve_pressure_system();
 
     // void refine_grid();
-    // void output_results(const unsigned int cycle) const;
+    void output_results(unsigned int time_step_number) const;
     // void compute_derived_quantities();
 
     TensorIndexer<dim>            tensor_indexer;
@@ -720,35 +727,44 @@ namespace PoroElasticity {
   template <int dim>
   void PoroElasticProblem<dim>::assemble_pressure_jacobian()
   {
+    // Accumulation term
     pressure_jacobian.copy_from(pressure_mass_matrix);
-    double multiplier = permeability*m_modulus*time_step/viscosity;
-    pressure_jacobian.add(multiplier, pressure_laplace_matrix);
+    pressure_jacobian *= (1./m_modulus/time_step);
+    // Diffusive flow term
+    double factor = permeability/viscosity;
+    pressure_jacobian.add(factor, pressure_laplace_matrix);
     pressure_constraints.condense(pressure_jacobian);
   }
 
   template <int dim>
   void PoroElasticProblem<dim>::assemble_pressure_residual()
   {
+    // Coupling terms
     pressure_tmp1 = volumetric_strain;
-    pressure_tmp1 *= (biot_coef*m_modulus);
+    pressure_tmp1 *= (biot_coef/time_step);
 
+    // Accumulation term
     pressure_tmp2 = pressure_solution;
     pressure_tmp2 -= pressure_old_solution;
+    pressure_tmp2 *= (1./m_modulus/time_step);
     pressure_tmp1 += pressure_tmp2;
-
     pressure_mass_matrix.vmult(pressure_residual, pressure_tmp1);
 
+    // Diffusive flow term
     pressure_laplace_matrix.vmult(pressure_tmp1, pressure_solution);
-    pressure_tmp1 *= (permeability/viscosity*time_step);
-
+    double factor = permeability/viscosity;
+    pressure_tmp1 *= factor;
     pressure_residual += pressure_tmp1;
 
+    // Source term
     VectorTools::create_right_hand_side(pressure_dof_handler,
                                         QGauss<dim>(pressure_fe.degree+1),
                                         pressure_source_term_function,
                                         pressure_tmp1);
     pressure_residual += pressure_tmp1;
 
+    // we are solving jacobian*dp = -residual
+    pressure_residual *= -1;
     pressure_constraints.condense(pressure_residual);
   }
 
@@ -764,12 +780,12 @@ namespace PoroElasticity {
     cg.solve(pressure_mass_matrix, solution_vector, rhs_vector,
              preconditioner);
     pressure_constraints.distribute(solution_vector);
-    std::cout << "     "
-              << "Projection component: "
-              << rhs_component
-              << " CG iterations: "
-              << solver_control.last_step()
-              << std::endl;
+    // std::cout << "     "
+    //           << "Projection component: "
+    //           << rhs_component
+    //           << " CG iterations: "
+    //           << solver_control.last_step()
+    //           << std::endl;
   }
 
   template <int dim>
@@ -782,10 +798,10 @@ namespace PoroElasticity {
     cg.solve(pressure_jacobian, pressure_update, pressure_residual,
              preconditioner);
     pressure_constraints.distribute(pressure_update);
-    std::cout << "     "
-              << "Pressure system CG iterations: "
-              << solver_control.last_step()
-              << std::endl;
+    // std::cout << "     "
+    //           << "Pressure system CG iterations: "
+    //           << solver_control.last_step()
+    //           << std::endl;
   }
 
   template <int dim>
@@ -821,6 +837,11 @@ namespace PoroElasticity {
     volumetric_strain += pressure_tmp1;
   }
 
+  template <int dim>
+  void PoroElasticProblem<dim>::output_results(const unsigned int time_step_number)
+  {
+
+  }
 
   template <int dim>
   void PoroElasticProblem<dim>::set_boundary_conditions()
@@ -852,48 +873,72 @@ namespace PoroElasticity {
     // set_boundary_conditions(); // not used anywhere
     read_mesh();
     setup_dofs();
+    // initial domain variables
+    pressure_solution = 0;
 
     double time = 0;
     unsigned int time_step_number = 0;
     double fss_TOL = 1e-8;
     double pressure_TOL = 1e-8;
+    double pressure_error;
     int max_pressure_iterations = 100;
+    int max_fss_iterations = 100;
     while (time < time_step){
       time += time_step;
+      std::cout << "Time: " << time << std::endl;
       pressure_old_solution = pressure_solution;
 
-      double pressure_error;
+      // strart Fixed-stress-split iterations
+      pressure_error = pressure_TOL*2;
+      int fss_iteration = 0;
+      while (fss_iteration < max_fss_iterations && pressure_error > pressure_TOL)
+        {
+          fss_iteration++;
+          std::cout << "    Coupling iteration: " << fss_iteration << std::endl;
 
-      pressure_update = 0;
-      // get_volumetric_strain();
-      volumetric_strain = 0;
-      int pressure_iteration = 0;
-      while (pressure_iteration < max_pressure_iterations){
-        pressure_iteration ++;
-        update_volumetric_strain();
-        assemble_pressure_residual();
-        pressure_error = pressure_residual.l2_norm();
-        if (pressure_error < pressure_TOL) break;
-        std::cout << "     "
-                  << "Pressure iteration: " << pressure_iteration
-                  << "; error: " << pressure_error << std::endl;
-        assemble_pressure_jacobian();
-        solve_pressure_system();
-        pressure_solution += pressure_update;
-        }
+          // pressure iterations
+          pressure_update = 0;
+          int pressure_iteration = 0;
+          while (pressure_iteration < max_pressure_iterations){
+            pressure_iteration++;
+            update_volumetric_strain();
+            assemble_pressure_residual();
+            pressure_error = pressure_residual.l2_norm();
+            if (pressure_error < pressure_TOL) {
+              std::cout << "        pressure converged; iterations: "
+                        << pressure_iteration
+                        << std::endl;
+              break;
+            }
+            // std::cout << "     "
+            //           << "Pressure iteration: " << pressure_iteration
+            //           << "; error: " << pressure_error << std::endl;
+            assemble_pressure_jacobian();
+            solve_pressure_system();
+            // pressure_solution += pressure_update;
+            pressure_solution.add(0.99, pressure_update);
+          }
 
-        // assemble_displacement_system_matrix();
-        // assemble_displacement_rhs();
-        // solve_displacement_system();
+          // Solve displacement system
+          assemble_displacement_system_matrix();
+          assemble_displacement_rhs();
+          solve_displacement_system();
 
-        // compute strains
-        // assemble_strain_projection_rhs(strain_tensor_volumetric_components);
+          // compute strains
+          assemble_strain_projection_rhs(strain_tensor_volumetric_components);
 
-        // for(const auto &comp : strain_tensor_volumetric_components ) {
-        //   int strain_rhs_component =
-        //     tensor_indexer.tensor_to_component_index(comp);
-        //   solve_strain_projection(strain_rhs_component);
+          for(const auto &comp : strain_tensor_volumetric_components ) {
+            int strain_rhs_component =
+              tensor_indexer.tensor_to_component_index(comp);
+            solve_strain_projection(strain_rhs_component);
+          }
 
+          get_volumetric_strain();
+          // get error
+          assemble_pressure_residual();
+          pressure_error = pressure_residual.l2_norm();
+          std::cout << "        Error: " << pressure_error << std::endl;
+      }
     }
 
   }
