@@ -319,7 +319,8 @@ namespace PoroElasticity {
                                                 const unsigned int q_point);
     PressureSourceTerm<dim>       pressure_source_term_function;
     std::vector<int>              strain_tensor_volumetric_components,
-                                  strain_rhs_volumetric_components;
+                                  strain_rhs_volumetric_components,
+                                  strain_tensor_shear_components;
     int                           n_stress_component;
   };
 
@@ -334,12 +335,15 @@ namespace PoroElasticity {
     switch (dim) {
     case 1:
       strain_tensor_volumetric_components = {0};
+      strain_tensor_shear_components  = {};
       break;
     case 2:
       strain_tensor_volumetric_components = {0, 2};
+      strain_tensor_shear_components  = {1};
       break;
     case 3:
       strain_tensor_volumetric_components = {0, 3, 5};
+      strain_tensor_shear_components  = {1, 2, 4};
       break;
     default:
       Assert(false, ExcNotImplemented());
@@ -877,13 +881,41 @@ namespace PoroElasticity {
   template <int dim>
   void PoroElasticProblem<dim>::output_results(const unsigned int time_step_number)
   {
-    std::string filename = "solution-";
-    filename += time_step_number;
-    filename += ".vtk";
-    std::ofstream output (filename.c_str());
+    std::vector<std::string> displacement_names(dim, "u");
 
-    // DataOut<dim> data_out;
-    // data_out.attach_dof_handler (dof_handler);
+    std::vector<DataComponentInterpretation::DataComponentInterpretation>
+    displacement_component_interpretation
+      (dim, DataComponentInterpretation::component_is_part_of_vector);
+
+    DataOut<dim> data_out;
+    data_out.add_data_vector(displacement_dof_handler, displacement_solution,
+                             displacement_names,
+                             displacement_component_interpretation);
+
+    data_out.add_data_vector(pressure_dof_handler, pressure_solution, "p");
+    data_out.add_data_vector(pressure_dof_handler, stresses[0], "sigma_xx");
+
+    switch (dim) {
+    case 2:
+      data_out.add_data_vector(pressure_dof_handler, stresses[1], "sigma_xy");
+      data_out.add_data_vector(pressure_dof_handler, stresses[2], "sigma_yy");
+      break;
+    case 3:
+      data_out.add_data_vector(pressure_dof_handler, stresses[1], "sigma_xy");
+      data_out.add_data_vector(pressure_dof_handler, stresses[2], "sigma_xz");
+      data_out.add_data_vector(pressure_dof_handler, stresses[3], "sigma_yy");
+      data_out.add_data_vector(pressure_dof_handler, stresses[4], "sigma_yz");
+      data_out.add_data_vector(pressure_dof_handler, stresses[5], "sigma_zz");
+      break;
+    }
+    // pressure_fe.degree
+    data_out.build_patches(std::min(displacement_fe.degree,
+                                    pressure_fe.degree));
+    std::ostringstream filename;
+    filename << "solution-" <<
+      Utilities::int_to_string(time_step_number, 4) << ".vtk";
+    std::ofstream output (filename.str().c_str());
+    data_out.write_vtk(output);
   }
 
   template <int dim>
@@ -982,14 +1014,16 @@ namespace PoroElasticity {
           pressure_error = pressure_residual.l2_norm();
           std::cout << "        Error: " << pressure_error << std::endl;
       }
-      // compute all strains
-      // for(const auto &comp : strain_tensor_volumetric_components ) {
-      //   int strain_rhs_component =
-      //     tensor_indexer.tensor_to_component_index(comp);
-      //   solve_strain_projection(strain_rhs_component);
-      get_effective_stresses();
 
-      // output_results(time_step_number);
+      // compute shear strains since volumetric are alredy obtained
+      for(const auto &comp : strain_tensor_shear_components) {
+        int strain_rhs_component =
+          tensor_indexer.tensor_to_component_index(comp);
+        solve_strain_projection(strain_rhs_component);
+      }
+
+      get_effective_stresses();
+      output_results(time_step_number);
       }
     }
 
