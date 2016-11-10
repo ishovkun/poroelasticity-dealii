@@ -1,0 +1,4 @@
+* Adaptive Mesh refinement
+* Solve for more than one time strep
+* Add background stresses and pressure
+*
