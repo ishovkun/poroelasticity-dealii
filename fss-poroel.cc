@@ -915,12 +915,14 @@ namespace PoroElasticity {
                              displacement_component_interpretation);
 
     data_out.add_data_vector(pressure_dof_handler, pressure_solution, "p");
-    data_out.add_data_vector(pressure_dof_handler, stresses[0], "sigma_xx");
+    data_out.add_data_vector(pressure_dof_handler, strains[0], "sigma_xx");
 
     switch (dim) {
     case 2:
-      data_out.add_data_vector(pressure_dof_handler, stresses[1], "sigma_xy");
-      data_out.add_data_vector(pressure_dof_handler, stresses[2], "sigma_yy");
+      data_out.add_data_vector(pressure_dof_handler, strains[1], "sigma_xy");
+      data_out.add_data_vector(pressure_dof_handler, strains[2], "sigma_yy");
+      // data_out.add_data_vector(pressure_dof_handler, stresses[1], "sigma_xy");
+      // data_out.add_data_vector(pressure_dof_handler, stresses[2], "sigma_yy");
       break;
     case 3:
       data_out.add_data_vector(pressure_dof_handler, stresses[1], "sigma_xy");
