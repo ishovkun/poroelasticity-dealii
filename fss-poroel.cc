@@ -64,7 +64,7 @@ namespace PoroElasticity {
   std::vector<unsigned int> displacement_dirichlet_components =
     {1, 1, 0, 0};
   std::vector<double> displacement_dirichlet_values =
-    {0, 0, 0, 0};
+    {-1e-3, -1e-3, 0, 0};
 
   std::vector<unsigned int> displacement_neumann_labels = {};
   std::vector<unsigned int> displacement_neumann_components = {};
@@ -86,10 +86,12 @@ namespace PoroElasticity {
   class TensorIndexer {
   public:
     TensorIndexer();
-    int tensor_to_component_index(int tensor_index);
-    int component_to_tensor_index(int component);
+    int tensor_to_entry_index(int tensor_index);
+    std::vector<int>
+    tensor_to_entry_index(std::vector<int> tensor_indexes);
+    int entry_to_tensor_index(int component);
   private:
-    std::vector<int> tensor_to_component_index_map;
+    std::vector<int> tensor_to_entry_index_map;
   };
 
   template <int dim>
@@ -97,15 +99,15 @@ namespace PoroElasticity {
   {
     switch (dim) {
     case 1:
-      tensor_to_component_index_map = {0};
+      tensor_to_entry_index_map = {0};
       break;
     case 2:
-      tensor_to_component_index_map = {0, 1, 1, 2};
+      tensor_to_entry_index_map = {0, 1, 1, 2};
       break;
     case 3:
-      tensor_to_component_index_map = {0, 1, 2,
-                                       1, 3, 4,
-                                       2, 4, 5};
+      tensor_to_entry_index_map = {0, 1, 2,
+                                   1, 3, 4,
+                                   2, 4, 5};
       break;
     default:
       Assert(false, ExcNotImplemented());
@@ -113,9 +115,20 @@ namespace PoroElasticity {
   }
 
   template <int dim>
-  int TensorIndexer<dim>::tensor_to_component_index(int tensor_index)
+  int TensorIndexer<dim>::tensor_to_entry_index(int tensor_index)
   {
-    return tensor_to_component_index_map[tensor_index];
+    return tensor_to_entry_index_map[tensor_index];
+  }
+
+  template <int dim>
+  std::vector<int> TensorIndexer<dim>::
+  tensor_to_entry_index(std::vector<int> tensor_indexes)
+  {
+    int n_comp = tensor_indexes.size();
+    std::vector<int> entries(n_comp);
+    for (int c=0; c<n_comp; ++c)
+      entries[c] = tensor_to_entry_index_map[tensor_indexes[c]];
+    return entries;
   }
   // --------------------- Right Hand Side -----------------------------------
   template <int dim>
@@ -277,7 +290,7 @@ namespace PoroElasticity {
     void solve_displacement_system();
 
     void assemble_strain_projection_rhs(std::vector<int> tensor_components);
-    void solve_strain_projection(int rhs_component);
+    void solve_strain_projection(int rhs_entry);
     void get_effective_stresses();
     void get_total_stresses(std::vector<int> tensor_components);
 
@@ -321,9 +334,9 @@ namespace PoroElasticity {
                                                 const unsigned int q_point);
     PressureSourceTerm<dim>       pressure_source_term_function;
     std::vector<int>              strain_tensor_volumetric_components,
-                                  strain_rhs_volumetric_components,
+                                  strain_rhs_volumetric_entries,
                                   strain_tensor_shear_components;
-    int                           n_stress_component;
+    int                           n_stress_components;
   };
 
   template <int dim>
@@ -333,31 +346,31 @@ namespace PoroElasticity {
     pressure_dof_handler(triangulation),
     pressure_fe(1)
   {
-    n_stress_component = 0.5*(dim*dim + dim);
+    n_stress_components = 0.5*(dim*dim + dim);
     switch (dim) {
     case 1:
       strain_tensor_volumetric_components = {0};
       strain_tensor_shear_components  = {};
       break;
     case 2:
-      strain_tensor_volumetric_components = {0, 2};
+      strain_tensor_volumetric_components = {0, 3};
       strain_tensor_shear_components  = {1};
       break;
     case 3:
-      strain_tensor_volumetric_components = {0, 3, 5};
-      strain_tensor_shear_components  = {1, 2, 4};
+      strain_tensor_volumetric_components = {0, 4, 8};
+      strain_tensor_shear_components  = {1, 2, 5};
       break;
     default:
       Assert(false, ExcNotImplemented());
     }
 
     int n_vol_comp = strain_tensor_volumetric_components.size();
-    strain_rhs_volumetric_components.resize(n_vol_comp);
+    strain_rhs_volumetric_entries.resize(n_vol_comp);
     for(int comp=0; comp<n_vol_comp; ++comp) {
-      int strain_rhs_component =
-        tensor_indexer.tensor_to_component_index
+      int strain_rhs_entry =
+        tensor_indexer.tensor_to_entry_index
         (strain_tensor_volumetric_components[comp]);
-      strain_rhs_volumetric_components[comp] = strain_rhs_component;
+      strain_rhs_volumetric_entries[comp] = strain_rhs_entry;
     }
   }
 
@@ -420,7 +433,7 @@ namespace PoroElasticity {
       unsigned int n_dirichlet_conditions =
         displacement_dirichlet_labels.size();
 
-      for (unsigned int cond=0; cond<n_dirichlet_conditions; ++cond){
+      for (unsigned int cond=0; cond<n_dirichlet_conditions; ++cond) {
         unsigned int component = displacement_dirichlet_components[cond];
         double dirichlet_value = displacement_dirichlet_values[cond];
         VectorTools::interpolate_boundary_values
@@ -484,10 +497,10 @@ namespace PoroElasticity {
       pressure_residual.reinit(pressure_n_dofs);
       volumetric_strain.reinit(pressure_n_dofs);
 
-      pressure_projection_rhs.resize(n_stress_component);
-      strains.resize(n_stress_component);
-      stresses.resize(n_stress_component);
-      for (int i=0; i<n_stress_component; ++i){
+      pressure_projection_rhs.resize(n_stress_components);
+      strains.resize(n_stress_components);
+      stresses.resize(n_stress_components);
+      for (int i=0; i<n_stress_components; ++i){
         pressure_projection_rhs[i].reinit(pressure_n_dofs);
         strains[i].reinit(pressure_n_dofs);
         stresses[i].reinit(pressure_n_dofs);
@@ -681,9 +694,11 @@ namespace PoroElasticity {
   void PoroElasticProblem<dim>::
   assemble_strain_projection_rhs(std::vector<int> tensor_components)
   {
+    // check input
     int n_comp = tensor_components.size();
-    // assert len(tensor_components) < n_stress_components
-    // assert tensor_components[i] < n_stress_components
+
+    // put assert statements
+
 	  QGauss<dim>  quadrature_formula(pressure_fe.degree+1);
 	  FEValues<dim> pressure_fe_values(pressure_fe, quadrature_formula,
                                      update_values |
@@ -699,11 +714,16 @@ namespace PoroElasticity {
 
     std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
 
-    std::vector< Vector<double> > cell_rhs(n_comp);
-    for (int c=0; c<n_comp; ++c)
-      cell_rhs[c].reinit(dofs_per_cell);
+    // global vectors where to write the RHS values
+    std::vector<int> entries =
+      tensor_indexer.tensor_to_entry_index(tensor_components);
 
-	  // std::vector< SymmetricTensor<2, dim> > node_strains(n_q_points);
+    std::vector< Vector<double> > cell_rhs(n_comp);
+    for (int c=0; c<n_comp; ++c) {
+      cell_rhs[c].reinit(dofs_per_cell);
+      pressure_projection_rhs[entries[c]] = 0;
+    }
+
 	  SymmetricTensor<2, dim> strain_tensor;
     std::vector< std::vector<Tensor<1,dim> > >
       displacement_grads(quadrature_formula.size(),
@@ -715,38 +735,45 @@ namespace PoroElasticity {
       displacement_cell = displacement_dof_handler.begin_active();
 
 	  for (; cell!=endc; ++cell, ++displacement_cell) {
-      // reinit stuff
+      // reinit stuff -------
+      for (int c=0; c<n_comp; ++c) cell_rhs[c] = 0;
 		  pressure_fe_values.reinit(cell);
 		  displacement_fe_values.reinit(displacement_cell);
       displacement_fe_values.get_function_gradients(displacement_solution,
                                                     displacement_grads);
-      for (int c=0; c<n_comp; ++c) cell_rhs[c] = 0;
-      // fill out local strain rhs values
+      // ----------
+
       for (unsigned int q_point=0; q_point<n_q_points; ++q_point) {
           strain_tensor = get_local_strain(displacement_grads[q_point]);
-          for (int c=0; c<n_comp; ++c){
-            int comp = tensor_components[c];
-            int tensor_component_1 = comp/dim;
-            int tensor_component_2 = comp%dim;
-            double strain_value =
-              strain_tensor[tensor_component_1][tensor_component_2];
+          double jxw = pressure_fe_values.JxW(q_point);
 
-            for (int i=0; i<dofs_per_cell; ++i)
-              cell_rhs[c][i] += (pressure_fe_values.shape_value(i, q_point) *
-                                 strain_value *
-                                 pressure_fe_values.JxW(q_point));
+
+          for (int i=0; i<dofs_per_cell; ++i){
+            double phi_i = pressure_fe_values.shape_value(i, q_point);
+
+            for (int c=0; c<n_comp; ++c){
+              int comp = tensor_components[c];
+              int tensor_component_1 = comp/dim;
+              int tensor_component_2 = comp%dim;
+              double strain_value =
+                strain_tensor[tensor_component_1][tensor_component_2];
+              // std::cout << strain_value << std::endl;
+
+              cell_rhs[c][i] += (phi_i * strain_value * jxw);
+            }
           }
+
       }
+
       // distribute local values to global vectors
-      for (int c=0; c<n_comp; ++c){
-        // indices of pressure rhs vector differ from those in strain tensor
-        int rhs_component =
-          tensor_indexer.tensor_to_component_index(tensor_components[c]);
+      cell->get_dof_indices(local_dof_indices);
+      for (int c=0; c<n_comp; ++c)
         pressure_constraints.distribute_local_to_global
           (cell_rhs[c], local_dof_indices,
-           pressure_projection_rhs[rhs_component]);
-      }
+           pressure_projection_rhs[entries[c]]);
+
     }
+
   }
 
   template <int dim>
@@ -794,10 +821,13 @@ namespace PoroElasticity {
   }
 
   template <int dim>
-  void PoroElasticProblem<dim>::solve_strain_projection(int rhs_component)
+  void PoroElasticProblem<dim>::solve_strain_projection(int rhs_entry)
   {
-    auto rhs_vector = pressure_projection_rhs[rhs_component];
-    auto solution_vector = strains[rhs_component];
+    // select entries
+    auto& rhs_vector = pressure_projection_rhs[rhs_entry];
+    auto& solution_vector = strains[rhs_entry];
+
+    // solve
     SolverControl solver_control(1000, 1e-8 * rhs_vector.l2_norm());
     SolverCG<> cg(solver_control);
     PreconditionSSOR<> preconditioner;
@@ -805,12 +835,21 @@ namespace PoroElasticity {
     cg.solve(pressure_mass_matrix, solution_vector, rhs_vector,
              preconditioner);
     pressure_constraints.distribute(solution_vector);
-    // std::cout << "     "
-    //           << "Projection component: "
-    //           << rhs_component
-    //           << " CG iterations: "
-    //           << solver_control.last_step()
-    //           << std::endl;
+    std::cout << "     "
+              << "Projection component: "
+              << rhs_entry
+              << " CG iterations: "
+              << solver_control.last_step()
+              << std::endl;
+    std::cout << "     "
+              << "RHS norm "
+              << rhs_vector.l2_norm()
+              << " solution: "
+              << solution_vector.l2_norm()
+              << " solution1: "
+              << strains[rhs_entry].l2_norm()
+              << std::endl
+              << std::endl;
   }
 
   template <int dim>
@@ -851,7 +890,7 @@ namespace PoroElasticity {
   void PoroElasticProblem<dim>::get_volumetric_strain()
   {
     volumetric_strain = 0;
-    for(const auto &comp : strain_rhs_volumetric_components) {
+    for(const auto &comp : strain_rhs_volumetric_entries) {
       volumetric_strain += strains[comp];
     }
   }
@@ -880,9 +919,9 @@ namespace PoroElasticity {
         for (int i=0; i<dim; ++i){
           // note that j is from i to dim since the tensor is symmetric
           for (int j=i; j<dim; ++j){
-            int strain_component =
-              tensor_indexer.tensor_to_component_index(i*dim + j);
-            double strain_value = strains[strain_component][l];
+            int strain_entry =
+              tensor_indexer.tensor_to_entry_index(i*dim + j);
+            double strain_value = strains[strain_entry][l];
             node_strain_tensor[i][j] = strain_value;
             // since it's symmetric
             if (i != j) node_strain_tensor[j][i] = strain_value;
@@ -893,7 +932,7 @@ namespace PoroElasticity {
         for (int i=0; i<dim; ++i){
           for (int j=i; j<dim; ++j){
             int stress_component =
-              tensor_indexer.tensor_to_component_index(i*dim + j);
+              tensor_indexer.tensor_to_entry_index(i*dim + j);
             stresses[stress_component][l] = node_stress_tensor[i][j];
           }
         }
@@ -915,14 +954,16 @@ namespace PoroElasticity {
                              displacement_component_interpretation);
 
     data_out.add_data_vector(pressure_dof_handler, pressure_solution, "p");
-    data_out.add_data_vector(pressure_dof_handler, strains[0], "sigma_xx");
+
+    // data_out.add_data_vector(pressure_dof_handler, strains[0], "eps_xx");
+    data_out.add_data_vector(pressure_dof_handler, stresses[0], "sigma_xx");
 
     switch (dim) {
     case 2:
-      data_out.add_data_vector(pressure_dof_handler, strains[1], "sigma_xy");
-      data_out.add_data_vector(pressure_dof_handler, strains[2], "sigma_yy");
-      // data_out.add_data_vector(pressure_dof_handler, stresses[1], "sigma_xy");
-      // data_out.add_data_vector(pressure_dof_handler, stresses[2], "sigma_yy");
+      // data_out.add_data_vector(pressure_dof_handler, strains[1], "eps_xy");
+      // data_out.add_data_vector(pressure_dof_handler, strains[2], "eps_yy");
+      data_out.add_data_vector(pressure_dof_handler, stresses[1], "sigma_xy");
+      data_out.add_data_vector(pressure_dof_handler, stresses[2], "sigma_yy");
       break;
     case 3:
       data_out.add_data_vector(pressure_dof_handler, stresses[1], "sigma_xy");
@@ -993,9 +1034,11 @@ namespace PoroElasticity {
 
     // while (time < t_max){
     while (time < time_step*20){
+    // while (time < 3*time_step){
       time += time_step;
       time_step_number++;
       std::cout << "Time: " << time << std::endl;
+      // std::cout << "   av pressure: " << pressure_solution.l2_norm() << std::endl;
 
       if (time_step_number % 5 == 0){
         std::cout << "Refining mesh" << std::endl;
@@ -1041,19 +1084,24 @@ namespace PoroElasticity {
           // Solve displacement system
           // assemble_displacement_system_matrix();  // assembled while remeshing
           assemble_displacement_rhs();
-          // std::cout << "   Disp RHS: " << displacement_rhs.l2_norm() << std::endl;
-          // std::cout << "   av pressure: " << pressure_solution.l2_norm() << std::endl;
           solve_displacement_system();
 
-          // compute strains
+          // compute components of volumetric strains
           assemble_strain_projection_rhs(strain_tensor_volumetric_components);
           for(const auto &comp : strain_tensor_volumetric_components ) {
-            int strain_rhs_component =
-              tensor_indexer.tensor_to_component_index(comp);
-            solve_strain_projection(strain_rhs_component);
+            int strain_rhs_entry =
+              tensor_indexer.tensor_to_entry_index(comp);
+            solve_strain_projection(strain_rhs_entry);
+            // std::cout << strain_rhs_entry << std::endl;
+            // std::cout << comp << std::endl;
           }
 
           get_volumetric_strain();
+          // std::cout << pressure_projection_rhs[2].l2_norm()
+          //           << " solution: "
+          //           << strains[2].l2_norm()
+          //           << std::endl;
+
 
           // get error
           assemble_pressure_residual();
@@ -1063,9 +1111,9 @@ namespace PoroElasticity {
 
       // compute shear strains since volumetric are alredy obtained
       for(const auto &comp : strain_tensor_shear_components) {
-        int strain_rhs_component =
-          tensor_indexer.tensor_to_component_index(comp);
-        solve_strain_projection(strain_rhs_component);
+        int strain_rhs_entry =
+          tensor_indexer.tensor_to_entry_index(comp);
+        solve_strain_projection(strain_rhs_entry);
       }
 
       get_effective_stresses();
