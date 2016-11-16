@@ -289,6 +289,7 @@ namespace PoroElasticity {
     void assemble_displacement_rhs();
     void solve_displacement_system();
 
+    void assemble_strain_projection_matrix();
     void assemble_strain_projection_rhs(std::vector<int> tensor_components);
     void solve_strain_projection(int rhs_entry);
     void get_effective_stresses();
@@ -311,12 +312,15 @@ namespace PoroElasticity {
     DoFHandler<dim>               pressure_dof_handler;
     ConstraintMatrix              pressure_constraints;
     SparsityPattern               pressure_sparsity_pattern;
-    SparseMatrix<double>          pressure_mass_matrix;
-    SparseMatrix<double>          pressure_laplace_matrix;
-    SparseMatrix<double>          pressure_jacobian;
+    SparseMatrix<double>          pressure_mass_matrix,
+                                  pressure_laplace_matrix,
+                                  pressure_jacobian,
+                                  strain_projection_matrix;
+
     Vector<double>                pressure_solution, pressure_old_solution,
                                   pressure_update, pressure_residual,
                                   volumetric_strain;
+
     Vector<double>                pressure_tmp1, pressure_tmp2;
     std::vector< Vector<double> > pressure_projection_rhs, strains, stresses;
     BoundaryConditions<dim>       pressure_boundary_conditions;
@@ -482,6 +486,8 @@ namespace PoroElasticity {
       pressure_jacobian.reinit(pressure_sparsity_pattern);
       pressure_mass_matrix.reinit(pressure_sparsity_pattern);
       pressure_laplace_matrix.reinit(pressure_sparsity_pattern);
+      strain_projection_matrix.reinit(pressure_sparsity_pattern);
+
       MatrixCreator::create_mass_matrix(pressure_dof_handler,
                                         QGauss<dim>(pressure_fe.degree+1),
                                         pressure_mass_matrix);
@@ -702,6 +708,14 @@ namespace PoroElasticity {
 
   template <int dim>
   void PoroElasticProblem<dim>::
+  assemble_strain_projection_matrix()
+  {
+    strain_projection_matrix.copy_from(pressure_mass_matrix);
+    pressure_constraints.condense(strain_projection_matrix);
+  }
+
+  template <int dim>
+  void PoroElasticProblem<dim>::
   assemble_strain_projection_rhs(std::vector<int> tensor_components)
   {
     // check input
@@ -730,10 +744,8 @@ namespace PoroElasticity {
 
     std::vector< Vector<double> > cell_rhs(n_comp,
                                            Vector<double>(dofs_per_cell));
-    for (int c=0; c<n_comp; ++c) {
-      // cell_rhs[c].reinit(dofs_per_cell);
+    for (int c=0; c<n_comp; ++c)
       pressure_projection_rhs[entries[c]] = 0;
-    }
 
 	  SymmetricTensor<2, dim> strain_tensor;
     std::vector< std::vector<Tensor<1,dim> > >
@@ -762,7 +774,7 @@ namespace PoroElasticity {
           for (int i=0; i<dofs_per_cell; ++i){
             double phi_i = pressure_fe_values.shape_value(i, q_point);
 
-            for (int c=0; c<n_comp; ++c){
+            for (int c=0; c<n_comp; ++c) {
               int comp = tensor_components[c];
               int tensor_component_1 = comp/dim;
               int tensor_component_2 = comp%dim;
@@ -793,6 +805,7 @@ namespace PoroElasticity {
     // Accumulation term
     pressure_jacobian.copy_from(pressure_mass_matrix);
     pressure_jacobian *= (1./m_modulus/time_step);
+
     // Diffusive flow term
     double factor = permeability/viscosity;
     pressure_jacobian.add(factor, pressure_laplace_matrix);
@@ -842,8 +855,8 @@ namespace PoroElasticity {
     SolverControl solver_control(1000, 1e-8 * rhs_vector.l2_norm());
     SolverCG<> cg(solver_control);
     PreconditionSSOR<> preconditioner;
-    preconditioner.initialize(pressure_mass_matrix, 1.0);
-    cg.solve(pressure_mass_matrix, solution_vector, rhs_vector,
+    preconditioner.initialize(strain_projection_matrix, 1.0);
+    cg.solve(strain_projection_matrix, solution_vector, rhs_vector,
              preconditioner);
     pressure_constraints.distribute(solution_vector);
     // std::cout << "     "
@@ -1034,6 +1047,7 @@ namespace PoroElasticity {
     pressure_solution = 0;
     volumetric_strain = 0;
     assemble_displacement_system_matrix();
+    assemble_strain_projection_matrix();
 
     double time = 0;
     unsigned int time_step_number = 0;
@@ -1057,6 +1071,7 @@ namespace PoroElasticity {
                     initial_global_refinement +
                     n_adaptive_pre_refinement_steps);
         assemble_displacement_system_matrix();
+        assemble_strain_projection_matrix();
       }
 
       pressure_old_solution = pressure_solution;
