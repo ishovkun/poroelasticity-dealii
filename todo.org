@@ -1,4 +1,7 @@
 * Adaptive Mesh refinement
 * Solve for more than one time strep
 * Add background stresses and pressure
-*
+* Assemble displacement should be one function
+  in order to avoid computing gradients twice because they are still
+  needed for correct BC's in the RHS function
+  put flag rebuild_displacement_matrix

@@ -1057,8 +1057,8 @@ namespace PoroElasticity {
     int max_pressure_iterations = 100;
     int max_fss_iterations = 100;
 
-    // while (time < t_max){
-    while (time < time_step*20){
+    while (time < t_max){
+    // while (time < time_step*20){
     // while (time < time_step){
       time += time_step;
       time_step_number++;
