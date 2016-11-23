@@ -1,0 +1,1 @@
+/usr/bin/c++      -rdynamic -fuse-ld=gold -pthread -ggdb CMakeFiles/code.dir/source/fss-poroel.cc.o  -o code -rdynamic ../lib/liblib.a /usr/local/lib/libdeal_II.g.so.8.4.1 -llapack -lblas -lgfortran -lquadmath -lm -lc -ldl -lz -lrt -Wl,-rpath,/usr/local/lib 
