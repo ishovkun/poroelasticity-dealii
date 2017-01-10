@@ -1,4 +1,4 @@
- # source/CMakeLists.txt
+ # code/CMakeLists.txt
 
 INCLUDE_DIRECTORIES(
   include

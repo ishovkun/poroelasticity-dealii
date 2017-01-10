@@ -33,8 +33,9 @@
 #include <vector>
 #include <array>
 
-// my files
+// custom files
 #include <right_hand_side.h>
+#include <TensorIndexer.h>
 
 
 namespace PoroElasticity {
@@ -45,6 +46,7 @@ namespace PoroElasticity {
   double permeability = 1e-9;
   double initial_porosity = 30;
   double viscosity = 1e-3;
+  double bulk_density = 2100;
   double fluid_compressibility = 0.00689475729;  // 1e-6 psi
   double time_step = 60*60*24;
   double r_well = 0.5;
@@ -84,122 +86,6 @@ namespace PoroElasticity {
 
   using namespace dealii;
 
-  // --------------------- Tensor Indexer ------------------------------------
-  template <int dim>
-  class TensorIndexer {
-  public:
-    TensorIndexer();
-    int tensor_to_entry_index(int tensor_index);
-    std::vector<int>
-    tensor_to_entry_index(std::vector<int> tensor_indexes);
-    int entry_to_tensor_index(int component);
-  private:
-    std::vector<int> tensor_to_entry_index_map;
-  };
-
-  template <int dim>
-  TensorIndexer<dim>::TensorIndexer()
-  {
-    switch (dim) {
-    case 1:
-      tensor_to_entry_index_map = {0};
-      break;
-    case 2:
-      tensor_to_entry_index_map = {0, 1, 1, 2};
-      break;
-    case 3:
-      tensor_to_entry_index_map = {0, 1, 2,
-                                   1, 3, 4,
-                                   2, 4, 5};
-      break;
-    default:
-      Assert(false, ExcNotImplemented());
-    }
-  }
-
-  template <int dim>
-  int TensorIndexer<dim>::tensor_to_entry_index(int tensor_index)
-  {
-    return tensor_to_entry_index_map[tensor_index];
-  }
-
-  template <int dim>
-  std::vector<int> TensorIndexer<dim>::
-  tensor_to_entry_index(std::vector<int> tensor_indexes)
-  {
-    int n_comp = tensor_indexes.size();
-    std::vector<int> entries(n_comp);
-    for (int c=0; c<n_comp; ++c)
-      entries[c] = tensor_to_entry_index_map[tensor_indexes[c]];
-    return entries;
-  }
-  // --------------------- Right Hand Side -----------------------------------
-  template <int dim>
-  class DisplacementRightHandSide :  public Function<dim>
-  {
-  public:
-    DisplacementRightHandSide ();
-
-    virtual void vector_value (Vector<double>   &values) const;
-    virtual void vector_value_list (const std::vector<Point<dim> > &points,
-                                    std::vector<Vector<double> >   &value_list) const;
-  };
-
-  template <int dim>
-  DisplacementRightHandSide<dim>::DisplacementRightHandSide ()
-    :
-    Function<dim> (dim)
-  {}
-
-  template <int dim>
-  inline
-  void DisplacementRightHandSide<dim>::vector_value(Vector<double>   &values) const {
-    Assert(values.size() == dim,
-           ExcDimensionMismatch (values.size(), dim));
-    Assert(dim == 2, ExcNotImplemented());
-
-    values(0) = 0;
-    values(1) = 0;
-  }
-
-  template <int dim>
-  void DisplacementRightHandSide<dim>::vector_value_list(const std::vector<Point<dim> > &points,
-                                             std::vector<Vector<double> >   &value_list
-                                             ) const {
-    Assert (value_list.size() == points.size(),
-            ExcDimensionMismatch (value_list.size(), points.size()));
-    const unsigned int n_points = points.size();
-    for (unsigned int p=0; p < n_points; ++p)
-      DisplacementRightHandSide<dim>::vector_value (value_list[p]);
-  }
-
-  // --------------------- Pressure Source Term ------------------------------
-  template<int dim>
-  class PressureSourceTerm : public Function<dim>
-  {
-  public:
-    PressureSourceTerm() :
-      Function<dim>()
-    {}
-
-    virtual double value(const Point<dim> &p,
-                         const unsigned int component = 0) const;
-  };
-
-  template<int dim>
-  double PressureSourceTerm<dim>::value(const Point<dim> &p,
-                                        const unsigned int component) const
-  {
-    Assert (component == 0, ExcInternalError());
-    Assert (dim == 2, ExcNotImplemented());
-
-    // if ((p[0] > 1) && (p[1] > -0.5))
-    double r_squared = p[0]*p[0] + p[1]*p[1];
-    if (r_squared <= r_well*r_well)
-      return flow_rate;
-    else
-      return 0;
-  }
   // --------------------- Compute local strain ------------------------------
   template <int dim>
   inline SymmetricTensor<2,dim>
@@ -308,7 +194,8 @@ namespace PoroElasticity {
     void refine_mesh(const unsigned int min_grid_level,
                      const unsigned int max_grid_level);
 
-    TensorIndexer<dim>            tensor_indexer;
+    // TensorIndexer<dim>            tensor_indexer;
+    indexing::TensorIndexer<dim>  tensor_indexer;
     Triangulation<dim>            triangulation;
 
     FE_Q<dim>                     pressure_fe;
@@ -374,7 +261,7 @@ namespace PoroElasticity {
     strain_rhs_volumetric_entries.resize(n_vol_comp);
     for(int comp=0; comp<n_vol_comp; ++comp) {
       int strain_rhs_entry =
-        tensor_indexer.tensor_to_entry_index
+        tensor_indexer.entryIndex
         (strain_tensor_volumetric_components[comp]);
       strain_rhs_volumetric_entries[comp] = strain_rhs_entry;
     }
@@ -587,7 +474,8 @@ namespace PoroElasticity {
                                      update_normal_vectors |
                                      update_JxW_values);
 
-    DisplacementRightHandSide<dim>  right_hand_side;
+    // DisplacementRightHandSide<dim>  right_hand_side;
+    RightHandSide::BodyForces<dim>  body_force(3, bulk_density);
 
     // fe parameters
     const unsigned int dofs_per_cell = displacement_fe.dofs_per_cell;
@@ -624,7 +512,7 @@ namespace PoroElasticity {
       pressure_fe_values.reinit(pressure_cell);
       pressure_fe_values.get_function_values(pressure_solution,
                                              pressure_values);
-      right_hand_side.vector_value_list
+      body_force.vector_value_list
         (displacement_fe_values.get_quadrature_points(), rhs_values);
 
       for (unsigned int i=0; i<dofs_per_cell; ++i){
@@ -742,7 +630,7 @@ namespace PoroElasticity {
 
     // global vectors where to write the RHS values
     std::vector<int> entries =
-      tensor_indexer.tensor_to_entry_index(tensor_components);
+      tensor_indexer.entryIndex(tensor_components);
 
     std::vector< Vector<double> > cell_rhs(n_comp,
                                            Vector<double>(dofs_per_cell));
@@ -835,7 +723,7 @@ namespace PoroElasticity {
     pressure_residual += pressure_tmp1;
 
     // Source term
-    RightHandSide::SinglePhaseSource<dim> pressure_source_term_function(r_well);
+    RightHandSide::SinglePhaseWell<dim> pressure_source_term_function(r_well);
     VectorTools::create_right_hand_side(pressure_dof_handler,
                                         QGauss<dim>(pressure_fe.degree+1),
                                         pressure_source_term_function,
@@ -948,7 +836,7 @@ namespace PoroElasticity {
           // note that j is from i to dim since the tensor is symmetric
           for (int j=i; j<dim; ++j){
             int strain_entry =
-              tensor_indexer.tensor_to_entry_index(i*dim + j);
+              tensor_indexer.entryIndex(i*dim + j);
             double strain_value = strains[strain_entry][l];
             node_strain_tensor[i][j] = strain_value;
             // since it's symmetric
@@ -960,7 +848,7 @@ namespace PoroElasticity {
         for (int i=0; i<dim; ++i){
           for (int j=i; j<dim; ++j){
             int stress_component =
-              tensor_indexer.tensor_to_entry_index(i*dim + j);
+              tensor_indexer.entryIndex(i*dim + j);
             stresses[stress_component][l] = node_stress_tensor[i][j];
           }
         }
@@ -1118,7 +1006,7 @@ namespace PoroElasticity {
           assemble_strain_projection_rhs(strain_tensor_volumetric_components);
           for(const auto &comp : strain_tensor_volumetric_components ) {
             int strain_rhs_entry =
-              tensor_indexer.tensor_to_entry_index(comp);
+              tensor_indexer.entryIndex(comp);
             solve_strain_projection(strain_rhs_entry);
             // std::cout << strain_rhs_entry << std::endl;
             // std::cout << comp << std::endl;
@@ -1135,7 +1023,7 @@ namespace PoroElasticity {
       // compute shear strains only since volumetric are alredy obtained
       for(const auto &comp : strain_tensor_shear_components) {
         int strain_rhs_entry =
-          tensor_indexer.tensor_to_entry_index(comp);
+          tensor_indexer.entryIndex(comp);
         solve_strain_projection(strain_rhs_entry);
       }
 
