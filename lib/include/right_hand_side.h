@@ -3,7 +3,7 @@
 
 #include <vector>
 
-namespace RightHandSide {
+namespace right_hand_side {
   using namespace dealii;
 
   /*----------------------- BodyForces --------------------------------
@@ -13,7 +13,7 @@ namespace RightHandSide {
   class BodyForces :  public Function<dim>
     {
     public:
-      BodyForces (int d, double rho);
+      BodyForces (double rho, int d = 3);
 
       virtual void vector_value (Vector<double> &values) const;
       virtual void vector_value_list (const std::vector< Point<dim> > &points,
@@ -45,12 +45,14 @@ namespace RightHandSide {
 
   // ----------------------- BodyForces class --------------------------------
   template <int dim>
-    BodyForces<dim>::BodyForces (int d, double rho)
+    BodyForces<dim>::BodyForces (double rho, int d)
     :
     Function<dim> (dim),
     direction(d),
     density(rho)
-  {}
+  {
+    /* std::cout << "defining body forces: " << d << std::endl; */
+  }
 
   template <int dim>
   inline
