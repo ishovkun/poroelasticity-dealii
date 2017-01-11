@@ -1,2 +1,0 @@
-/usr/bin/ar qc liblib.a  CMakeFiles/lib.dir/source/right_hand_side.cc.o
-/usr/bin/ranlib liblib.a
