@@ -39,8 +39,10 @@ namespace solvers {
   public:
     DoFHandler<dim>       dof_handler;
     FESystem<dim>         fe;
-    DoFHandler<dim>*      p_pressure_dof_handler;
-    FE_Q<dim>*            p_pressure_fe;
+    // we use pointers for these two variables, because references require
+    // initialization. the variables are initialized in a different class
+    DoFHandler<dim>       *p_pressure_dof_handler;
+    FE_Q<dim>             *p_pressure_fe;
     Vector<double>        solution;
 
   private:

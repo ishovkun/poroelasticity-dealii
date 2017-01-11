@@ -24,6 +24,24 @@ namespace constitutive_model {
   }
 
 
+  template <int dim>
+  inline SymmetricTensor<2,dim>
+  get_strain_tensor (const std::vector<Tensor<1,dim> > &grad)
+    /*
+      Compute local strain tensor from solution gradients
+     */
+    {
+      Assert (grad.size() == dim, ExcInternalError());
+      SymmetricTensor<2,dim> strain;
+      for (unsigned int i=0; i<dim; ++i)
+        strain[i][i] = grad[i][i];
+      for (unsigned int i=0; i<dim; ++i)
+        for (unsigned int j=i+1; j<dim; ++j)
+          strain[i][j] = (grad[i][j] + grad[j][i]) / 2;
+      return strain;
+    }
+
+
   template <int dim> inline
   SymmetricTensor<4, dim> isotropic_gassman_tensor(double lambda, double mu)
   {

@@ -9,6 +9,7 @@ ADD_LIBRARY(lib
   include/PoroElasticPressureSolver.h
   include/PoroElasticDisplacementSolver.h
   include/ConstitutiveModel.h
+  include/StrainProjector.h
   )
 
 DEAL_II_SETUP_TARGET(lib)

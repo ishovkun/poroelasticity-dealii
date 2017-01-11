@@ -31,11 +31,8 @@ namespace solvers {
                           old_solution;
     Vector<double>        residual;
     Vector<double>        tmp1, tmp2;
-
-  private:
-    ConstraintMatrix      constraints;
     SparsityPattern       sparsity_pattern;
-
+    ConstraintMatrix      constraints;
     SparseMatrix<double>  mass_matrix, laplace_matrix, jacobian;
 
   };
