@@ -222,8 +222,7 @@ namespace solvers {
           // body forces
           cell_rhs(i) +=
             (fe_values.shape_value(i, q_point) *
-             rhs_values[q_point](component_i)
-            ) * jxw;
+             rhs_values[q_point](component_i)) * jxw;
 
           // Pore pressure coupling
           // it only has one non-negative diagonal entry
@@ -271,11 +270,11 @@ namespace solvers {
                       fe_face_values.shape_value(i, q_point) *
                       neumann_value *
                       fe_face_values.JxW(q_point);
-                  }
-              }
+                  }  // end of q_point loop
+              }  // end of i loop
           }
-        }
-      }
+        }  // end of condition at boundary
+      }  // end of face loop
 
       cell->get_dof_indices(local_dof_indices);
       if (rebuild_system_matrix)

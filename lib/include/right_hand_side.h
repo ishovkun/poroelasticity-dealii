@@ -32,12 +32,12 @@ namespace right_hand_side {
     public:
       SinglePhaseWell(double r);
       /* ~SinglePhaseWell(); */
-      virtual void setRate(double rate);
+      virtual void set_rate(double rate);
 
       virtual double value(const Point<dim> &p,
                            const unsigned int component = 0) const;
     private:
-      double r_well, flow_rate=1e6;
+      double r_well, flow_rate;
     };
 
   // ----------------------- IMPLEMENTATION --------------------------------
@@ -88,12 +88,10 @@ namespace right_hand_side {
   SinglePhaseWell<dim>::SinglePhaseWell(double r) :
     Function<dim>(),
     r_well(r)
-  {
-    // r_well = r;
-  }
+  {}
 
   template<int dim>
-  void SinglePhaseWell<dim>::setRate(double rate)
+  void SinglePhaseWell<dim>::set_rate(double rate)
   {
     flow_rate = rate;
   }
@@ -106,10 +104,15 @@ namespace right_hand_side {
     Assert (dim == 2, ExcNotImplemented());
 
     double r_squared = p[0]*p[0] + p[1]*p[1];
-    if (r_squared <= r_well*r_well)
-      return flow_rate;
+    if (r_squared <= r_well*r_well) {
+      /* std::cout<< "Rate " << flow_rate << std::endl; */
+      return -flow_rate/(3.1415926*r_well*r_well);
+    }
     else
-      return 0;
+      {
+        /* std::cout<< "zero " << flow_rate << std::endl; */
+        return 0;
+      }
   }
 
   // ----------------------- FlowGravityclass -------------------------

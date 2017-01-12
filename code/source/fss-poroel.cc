@@ -86,8 +86,8 @@ namespace PoroElasticity {
     void get_effective_stresses();
     void get_total_stresses(std::vector<int> tensor_components);
 
+    void get_normal_strain_components();
     void get_volumetric_strain();
-    void update_volumetric_strain();
     void output_results(const unsigned int time_step_number);
     void refine_mesh(const unsigned int min_grid_level,
                      const unsigned int max_grid_level);
@@ -170,23 +170,29 @@ namespace PoroElasticity {
 
   } // eom
 
-
   template <int dim>
-  void PoroElasticProblem<dim>::update_volumetric_strain()
+  void PoroElasticProblem<dim>::get_normal_strain_components()
   {
-    pressure_solver.tmp1 = pressure_solver.solution_update;
-    pressure_solver.tmp1 *= (data.biot_coef/data.bulk_modulus);
-    volumetric_strain += pressure_solver.tmp1;
-  }
+    // compute components of volumetric strains
+    strain_projector.assemble_projection_rhs(strain_tensor_volumetric_components);
+    for(const auto &comp : strain_tensor_volumetric_components ) {
+      int strain_rhs_entry = tensor_indexer.entryIndex(comp);
+      strain_projector.solve_projection_system(strain_rhs_entry);
+      // std::cout << strain_rhs_entry << std::endl;
+      // std::cout << comp << std::endl;
+    }
+
+  }  // EOM
 
 
   template <int dim>
   void PoroElasticProblem<dim>::get_volumetric_strain()
   {
+    // compute volumetric strain
     volumetric_strain = 0;
     for(const auto &comp : strain_rhs_volumetric_entries)
       volumetric_strain += strain_projector.strains[comp];
-  }
+  }  // EOM
 
 
   template <int dim>
@@ -246,15 +252,15 @@ namespace PoroElasticity {
                              pressure_solver.solution, "p");
 
     data_out.add_data_vector(pressure_solver.dof_handler,
-                             pressure_solver.strains[0], "eps_xx");
+                             strain_projector.strains[0], "eps_xx");
     data_out.add_data_vector(pressure_solver.dof_handler,
                              stresses[0], "sigma_xx");
     switch (dim) {
     case 2:
       data_out.add_data_vector(pressure_solver.dof_handler,
-                               pressure_solver.strains[1], "eps_xy");
+                               strain_projector.strains[1], "eps_xy");
       data_out.add_data_vector(pressure_solver.dof_handler,
-                               pressure_solver.strains[2], "eps_yy");
+                               strain_projector.strains[2], "eps_yy");
       data_out.add_data_vector(pressure_solver.dof_handler,
                                stresses[1], "sigma_xy");
       data_out.add_data_vector(pressure_solver.dof_handler,
@@ -262,15 +268,15 @@ namespace PoroElasticity {
       break;
     case 3:
       data_out.add_data_vector(pressure_solver.dof_handler,
-                               pressure_solver.strains[1], "eps_xy");
+                               strain_projector.strains[1], "eps_xy");
       data_out.add_data_vector(pressure_solver.dof_handler,
-                               pressure_solver.strains[2], "eps_xz");
+                               strain_projector.strains[2], "eps_xz");
       data_out.add_data_vector(pressure_solver.dof_handler,
-                               pressure_solver.strains[3], "eps_yy");
+                               strain_projector.strains[3], "eps_yy");
       data_out.add_data_vector(pressure_solver.dof_handler,
-                               pressure_solver.strains[4], "eps_yz");
+                               strain_projector.strains[4], "eps_yz");
       data_out.add_data_vector(pressure_solver.dof_handler,
-                               pressure_solver.strains[5], "eps_zz");
+                               strain_projector.strains[5], "eps_zz");
       data_out.add_data_vector(pressure_solver.dof_handler,
                                stresses[1], "sigma_xy");
       data_out.add_data_vector(pressure_solver.dof_handler,
@@ -297,7 +303,6 @@ namespace PoroElasticity {
   template <int dim>
   void PoroElasticProblem<dim>::run()
   {
-    // data.get_data();
     data.read_input_file("input.data");
     read_mesh();
 
@@ -319,20 +324,16 @@ namespace PoroElasticity {
     pressure_solver.solution = 0;
     volumetric_strain = 0;
     displacement_solver.assemble_system(pressure_solver.solution);
+    // compute initial displacement
+    displacement_solver.solve();
     strain_projector.assemble_projection_matrix();
 
     double time = 0;
     double time_step = data.time_step;
     unsigned int time_step_number = 0;
-    double fss_TOL = 1e-8;
-    double pressure_TOL = 1e-8;
     double pressure_error;
-    int max_pressure_iterations = 100;
-    int max_fss_iterations = 100;
 
-    // while (time < t_max){
-    // // while (time < time_step*20){
-    while (time < time_step){
+    while (time < data.t_max){
       time += time_step;
       time_step_number++;
       std::cout << "Time: " << time << std::endl;
@@ -350,49 +351,58 @@ namespace PoroElasticity {
       pressure_solver.old_solution = pressure_solver.solution;
 
       // strart Fixed-stress-split iterations
-      pressure_error = pressure_TOL*2;
+      pressure_error = data.pressure_tol*2;
       int fss_iteration = 0;
-      while (fss_iteration < max_fss_iterations && pressure_error > pressure_TOL)
+      while (fss_iteration < data.max_fss_iterations &&
+             pressure_error > data.fss_tol)
+      // while (fss_iteration < 1)
         {
           fss_iteration++;
           std::cout << "    Coupling iteration: " << fss_iteration << std::endl;
 
           // pressure iterations
-          pressure_solver.solution_update = 0;
           int pressure_iteration = 0;
-          while (pressure_iteration < max_pressure_iterations) {
+          pressure_solver.solution_update = 0;
+
+          while (pressure_iteration < data.max_pressure_iterations) {
             pressure_iteration++;
-            update_volumetric_strain();
+            pressure_solver.update_volumetric_strain(volumetric_strain);
             pressure_solver.assemble_residual(time_step, volumetric_strain);
             pressure_error = pressure_solver.residual.l2_norm();
-            if (pressure_error < pressure_TOL) {
+
+            if (pressure_error < data.pressure_tol) {
               std::cout << "        pressure converged; iterations: "
-                        << pressure_iteration
+                        << pressure_iteration - 1
                         << std::endl;
               break;
             }
 
-            std::cout << "     "
-                      << "Pressure iteration: " << pressure_iteration
-                      << "; error: " << pressure_error << std::endl;
+            // std::cout << "     "
+            //           << "Pressure iteration: " << pressure_iteration
+            //           << "; error: " << pressure_error << std::endl;
 
             pressure_solver.assemble_jacobian(time_step);
             pressure_solver.solve();
+            pressure_solver.solution += pressure_solver.solution_update;
+            // std::cout << "Solution increment: "
+            //           << pressure_solver.solution_update.linfty_norm() << "\t"
+            //           << std::endl;
+
           } // end pressure iterations
+
+          // Some info messages (debug)
+          std::cout << "Solution limits: "
+                    << pressure_solver.solution.linfty_norm() << "\t"
+                    << std::endl;
+          // std::cout << "Vol strain: "
+          //           << volumetric_strain.linfty_norm() << "\t"
+          //           << std::endl;
 
           // Solve displacement system
           displacement_solver.assemble_system(pressure_solver.solution);
           displacement_solver.solve();
 
-          // compute components of volumetric strains
-          strain_projector.assemble_projection_rhs(strain_tensor_volumetric_components);
-          for(const auto &comp : strain_tensor_volumetric_components ) {
-            int strain_rhs_entry = tensor_indexer.entryIndex(comp);
-            strain_projector.solve_projection_system(strain_rhs_entry);
-            // std::cout << strain_rhs_entry << std::endl;
-            // std::cout << comp << std::endl;
-          }
-
+          get_normal_strain_components();
           get_volumetric_strain();
 
           // get error
@@ -408,8 +418,8 @@ namespace PoroElasticity {
         strain_projector.solve_projection_system(strain_rhs_entry);
       }
 
-      // get_effective_stresses();
-      // output_results(time_step_number);
+      get_effective_stresses();
+      output_results(time_step_number);
 
     }  // end time stepping
 

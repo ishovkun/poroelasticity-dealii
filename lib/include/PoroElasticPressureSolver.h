@@ -25,6 +25,7 @@ namespace solvers {
     void assemble_jacobian(double time_step);
     void assemble_residual(double time_step,
                            Vector<double> &volumetric_strain);
+    void update_volumetric_strain(Vector<double> &volumetric_strain);
     void solve();
 
   // variables
@@ -107,48 +108,43 @@ namespace solvers {
   } // end of method
 
   template <int dim>
-  void PoroElasticPressureSolver<dim>::assemble_residual
-    (double time_step,
-     Vector<double> &volumetric_strain)
+  void PoroElasticPressureSolver<dim>::
+    assemble_residual (double time_step, Vector<double> &volumetric_strain)
   {
-    /* std::cout << "Factors: " */
-    /*           << data.biot_coef << "\t" */
-    /*           << data.time_step << "\t" */
-    /*           << data.perm << "\t" */
-    /*           << data.visc << "\t" */
-    /*           << data.r_well << "\t" */
-    /*           << data.m_modulus << "\t" */
-    /*           << std::endl; */
+    residual = 0;
     // Coupling terms
     tmp1 = volumetric_strain;
-    /* std::cout << "Pass1" << std::endl; */
     tmp1 *= (data.biot_coef/time_step);
-    /* std::cout << "Pass2" << std::endl; */
+    /* std::cout << "Step 1: coupling terms " << tmp1.linfty_norm() << std::endl; */
 
     // Accumulation term
     tmp2 = solution;
     tmp2 -= old_solution;
     tmp2 *= (1./data.m_modulus/time_step);
+    /* std::cout << "Step 2: accumulation term " << tmp2.linfty_norm() << std::endl; */
     tmp1 += tmp2;
     mass_matrix.vmult(residual, tmp1);
 
     // Diffusive flow term
     laplace_matrix.vmult(tmp1, solution);
-    double factor = data.perm/data.visc;
-    tmp1 *= factor;
+    tmp1 *= (data.perm/data.visc);
+    /* std::cout << "Step 3: diffusive term " << tmp1.linfty_norm() << std::endl; */
     residual += tmp1;
 
     // Source term
     right_hand_side::SinglePhaseWell<dim> source_term_function(data.r_well);
+    source_term_function.set_rate(data.flow_rate);
     VectorTools::create_right_hand_side(dof_handler,
                                         QGauss<dim>(fe.degree + 1),
                                         source_term_function,
                                         tmp1);
     residual += tmp1;
+    /* std::cout << "Step 4: source term " << tmp1.linfty_norm() << std::endl; */
 
     // we are solving jacobian*dp = -residual
     residual *= -1;
     constraints.condense(residual);
+    /* std::cout << "Step 5: residual " << residual.linfty_norm() << std::endl; */
   }
 
 
@@ -175,12 +171,20 @@ namespace solvers {
     preconditioner.initialize(jacobian, 1.0);
     cg.solve(jacobian, solution_update, residual, preconditioner);
     constraints.distribute(solution_update);
-    solution += solution_update;
     // std::cout << "     "
     //           << "Pressure system CG iterations: "
     //           << solver_control.last_step()
     //           << std::endl;
   } // EOM
+
+  template <int dim>
+  void PoroElasticPressureSolver<dim>::
+    update_volumetric_strain(Vector<double> &volumetric_strain)
+  {
+    tmp1 = solution_update;
+    tmp1 *= (data.biot_coef/data.bulk_modulus);
+    volumetric_strain += tmp1;
+  }
 
 
 

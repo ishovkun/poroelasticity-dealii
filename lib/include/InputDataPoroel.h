@@ -28,6 +28,8 @@ namespace input_data {
     double r_well, flow_rate;
     // Solver control
     double time_step, t_max;
+    double fss_tol, pressure_tol;
+    int max_fss_iterations, max_pressure_iterations;
 
     // Derived equation parameters
     double lame_constant, shear_modulus, bulk_modulus,
@@ -83,6 +85,10 @@ namespace input_data {
       prm.enter_subsection("Solver");
       prm.declare_entry("Time step", "60", Patterns::Double());
       prm.declare_entry("Time max", "60", Patterns::Double());
+      prm.declare_entry("Max FSS iterations", "50", Patterns::Integer(3, 1000));
+      prm.declare_entry("Max pressure iterations", "50", Patterns::Integer(3, 1000));
+      prm.declare_entry("FSS tolerance", "1e-8", Patterns::Double(1e-16, 1e-5));
+      prm.declare_entry("Pressure tolerance", "1e-8", Patterns::Double(1e-16, 1e-5));
       prm.leave_subsection();
     }
 
@@ -113,6 +119,10 @@ namespace input_data {
       prm.enter_subsection("Solver");
       time_step = prm.get_double("Time step");
       t_max = prm.get_double("Time max");
+      fss_tol = prm.get_double("FSS tolerance");
+      pressure_tol = prm.get_double("Pressure tolerance");
+      max_fss_iterations = prm.get_integer("Max FSS iterations");
+      max_pressure_iterations = prm.get_integer("Max pressure iterations");
       prm.leave_subsection();
     }
     /* std::cout << "perm: " << perm << std::endl; */
@@ -135,15 +145,15 @@ namespace input_data {
   template <int dim>
     void InputDataPoroel<dim>::check_data()
     {
-      std::cout << "Params: " << std::endl
-                << "f_comp " << f_comp << std::endl
-                << "perm " << perm << std::endl
-                << "lambda " << lame_constant << std::endl
-                << "G " << shear_modulus << std::endl
-                << "K " << bulk_modulus << std::endl
-                << "Ks " << grain_bulk_modulus << std::endl
-                << "N " << n_modulus << std::endl
-                << "M " << m_modulus << std::endl;
+      /* std::cout << "Params: " << std::endl */
+      /*           << "f_comp " << f_comp << std::endl */
+      /*           << "perm " << perm << std::endl */
+      /*           << "lambda " << lame_constant << std::endl */
+      /*           << "G " << shear_modulus << std::endl */
+      /*           << "K " << bulk_modulus << std::endl */
+      /*           << "Ks " << grain_bulk_modulus << std::endl */
+      /*           << "N " << n_modulus << std::endl */
+      /*           << "M " << m_modulus << std::endl; */
 
     }  // EOM
 
