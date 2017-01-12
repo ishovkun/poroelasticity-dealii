@@ -98,8 +98,7 @@ namespace input_data {
   template <int dim>
   void InputDataPoroel<dim>::assign_parameters()
   {
-    /* std::cout << "perm: " << perm << std::endl; */
-    {
+    { // Properties section
       double mili_darcy = 9.869233e-16;
       prm.enter_subsection("Properties");
       youngs_modulus = prm.get_double("Young modulus");
@@ -115,7 +114,7 @@ namespace input_data {
       flow_rate = prm.get_double("Flow rate");
       prm.leave_subsection();
     }
-    {
+    { // Solver section
       prm.enter_subsection("Solver");
       time_step = prm.get_double("Time step");
       t_max = prm.get_double("Time max");
@@ -125,7 +124,6 @@ namespace input_data {
       max_pressure_iterations = prm.get_integer("Max pressure iterations");
       prm.leave_subsection();
     }
-    /* std::cout << "perm: " << perm << std::endl; */
   }  // EOM
 
 
@@ -133,10 +131,10 @@ namespace input_data {
   void InputDataPoroel<dim>::compute_derived_parameters()
   {
     double E = youngs_modulus, nu = poisson_ratio;
-    lame_constant = E*nu/((1.+nu)*(1.-2.*nu));
-    shear_modulus = 0.5*E/(1+nu);
+    lame_constant = E*nu/((1. + nu)*(1. - 2.*nu));
+    shear_modulus = 0.5*E/(1 + nu);
     bulk_modulus = lame_constant + 2./3.*shear_modulus;
-    grain_bulk_modulus = bulk_modulus/(1 - biot_coef);
+    grain_bulk_modulus = bulk_modulus/(1. - biot_coef);
     n_modulus = grain_bulk_modulus/(biot_coef - poro);
     m_modulus = (n_modulus/f_comp)/(n_modulus*poro + 1./f_comp);
   }  // EOM
@@ -145,6 +143,9 @@ namespace input_data {
   template <int dim>
     void InputDataPoroel<dim>::check_data()
     {
+      double mili_darcy = 9.869233e-16;
+      /* Assert(perm < 10e3 && perm > 0, ) */
+      std::cout << "perm: " << perm/mili_darcy << " mD" << std::endl;
       /* std::cout << "Params: " << std::endl */
       /*           << "f_comp " << f_comp << std::endl */
       /*           << "perm " << perm << std::endl */

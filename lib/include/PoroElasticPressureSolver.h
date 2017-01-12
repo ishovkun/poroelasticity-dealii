@@ -24,7 +24,8 @@ namespace solvers {
     void output_results(const unsigned int time_step_number);
     void assemble_jacobian(double time_step);
     void assemble_residual(double time_step,
-                           Vector<double> &volumetric_strain);
+                           Vector<double> &volumetric_strain,
+                           Vector<double> &initial_volumetric_strain);
     void update_volumetric_strain(Vector<double> &volumetric_strain);
     void solve();
 
@@ -109,11 +110,15 @@ namespace solvers {
 
   template <int dim>
   void PoroElasticPressureSolver<dim>::
-    assemble_residual (double time_step, Vector<double> &volumetric_strain)
+    assemble_residual(double time_step,
+                      Vector<double> &volumetric_strain,
+                      Vector<double> &initial_volumetric_strain)
   {
+    // assert size(volumetric_strain) == size(initial_volumetric_strain)
     residual = 0;
     // Coupling terms
     tmp1 = volumetric_strain;
+    tmp1 -= initial_volumetric_strain;
     tmp1 *= (data.biot_coef/time_step);
     /* std::cout << "Step 1: coupling terms " << tmp1.linfty_norm() << std::endl; */
 
