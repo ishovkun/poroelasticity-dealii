@@ -8,7 +8,7 @@ subsection Properties
   set Biot coefficient      = 0.9
   set Bulk density          = 2700          
   set Fluid compressibility = 5.8e-10   # 1.45e-10 for water
-  set Permeability          = 100          # in mDa
+  set Permeability          = 10          # in mDa
   set Poisson ratio         = 0.3
   set Porosity              = 0.3
   set Viscosity             = 1e-3

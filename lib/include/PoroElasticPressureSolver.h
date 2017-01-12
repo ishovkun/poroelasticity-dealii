@@ -27,6 +27,8 @@ namespace solvers {
                            Vector<double> &volumetric_strain,
                            Vector<double> &initial_volumetric_strain);
     void update_volumetric_strain(Vector<double> &volumetric_strain);
+    void update_porosity(Vector<double> &volumetric_strain,
+                         Vector<double> &initial_volumetric_strain);
     void solve();
 
   // variables

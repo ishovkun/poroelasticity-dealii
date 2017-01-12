@@ -20,6 +20,7 @@ namespace input_data {
   private:
     ParameterHandler prm;
     std::string      input_file_name;
+
   public:
     // Equation data
     double perm, poro, visc, f_comp;
@@ -30,6 +31,8 @@ namespace input_data {
     double time_step, t_max;
     double fss_tol, pressure_tol;
     int max_fss_iterations, max_pressure_iterations;
+    // In situ
+    double p_init;
 
     // Derived equation parameters
     double lame_constant, shear_modulus, bulk_modulus,
@@ -77,8 +80,8 @@ namespace input_data {
       prm.leave_subsection();
     }
     {
-      prm.enter_subsection("In Situ");
-      prm.declare_entry("Pinit", "10e6", Patterns::Double());
+      prm.enter_subsection("In situ");
+      prm.declare_entry("Initial pressure", "10e6", Patterns::Double());
       prm.leave_subsection();
     }
     {
@@ -112,6 +115,11 @@ namespace input_data {
       f_comp = prm.get_double("Fluid compressibility");
       r_well = prm.get_double("Well radius");
       flow_rate = prm.get_double("Flow rate");
+      prm.leave_subsection();
+    }
+    {
+      prm.enter_subsection("In situ");
+      p_init = prm.get_double("Initial pressure");
       prm.leave_subsection();
     }
     { // Solver section

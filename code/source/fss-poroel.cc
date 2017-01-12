@@ -332,18 +332,16 @@ namespace PoroElasticity {
 
     setup_dofs();
 
-    // initial domain variables
-    pressure_solver.solution = 0;
-    // volumetric_strain = 0;
+    // Initialize reservoir
+    pressure_solver.solution = data.p_init;
     displacement_solver.assemble_system(pressure_solver.solution);
-
-    // compute initial state
     displacement_solver.solve();
     strain_projector.assemble_projection_matrix();
     get_normal_strain_components();
     get_volumetric_strain();
     initial_volumetric_strain = volumetric_strain;
 
+    // Start time iterations
     double time = 0;
     double time_step = data.time_step;
     unsigned int time_step_number = 0;
@@ -382,7 +380,7 @@ namespace PoroElasticity {
 
           while (pressure_iteration < data.max_pressure_iterations) {
             pressure_iteration++;
-            // pressure_solver.update_volumetric_strain(volumetric_strain);
+            pressure_solver.update_volumetric_strain(volumetric_strain);
             pressure_solver.assemble_residual(time_step,
                                               volumetric_strain,
                                               initial_volumetric_strain);
