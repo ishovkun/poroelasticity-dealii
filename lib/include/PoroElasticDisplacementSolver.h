@@ -16,6 +16,7 @@ namespace solvers {
   // methods
   public:
     PoroElasticDisplacementSolver(Triangulation<dim> &triangulation,
+                                  input_data::InputDataPoroel<dim> &data_,
                                   int fe_degree = 2);
     ~PoroElasticDisplacementSolver();
 
@@ -52,15 +53,17 @@ namespace solvers {
     Vector<double>        rhs_vector;
     boundary_conditions::BoundaryConditions<dim> bc;
     bool rebuild_system_matrix;
-
+    input_data::InputDataPoroel<dim> &data;
   };
 
 
   template <int dim>
   PoroElasticDisplacementSolver<dim>::
   PoroElasticDisplacementSolver(Triangulation<dim> &triangulation,
+                                input_data::InputDataPoroel<dim> &data_,
                                 int fe_degree) :
     dof_handler(triangulation),
+    data(data_),
     fe(FE_Q<dim>(2), dim)
     {}
 
@@ -169,10 +172,7 @@ namespace solvers {
                                      update_normal_vectors |
                                      update_JxW_values);
 
-    double bulk_density = 2700;
-    double lame_constant = 1e5, shear_modulus = 1e6;
-    double biot_coef = 0.8;
-    right_hand_side::BodyForces<dim>  body_force(bulk_density);
+    right_hand_side::BodyForces<dim>  body_force(data.bulk_density);
 
     // fe parameters
     const unsigned int dofs_per_cell = fe.dofs_per_cell;
@@ -188,7 +188,8 @@ namespace solvers {
     Tensor<1,dim>	neumann_bc_vector;
     SymmetricTensor<2,dim>	strain_tensor_i, strain_tensor_j;
     SymmetricTensor<4,dim>  gassman_tensor =
-      constitutive_model::isotropic_gassman_tensor<dim>(lame_constant, shear_modulus);
+      constitutive_model::isotropic_gassman_tensor<dim>(data.lame_constant,
+                                                        data.shear_modulus);
 
     // store pressure values
     std::vector<double> pressure_values(n_q_points);
@@ -230,7 +231,7 @@ namespace solvers {
           strain_tensor_i =
             constitutive_model::get_strain_tensor(fe_values, i, q_point);
           cell_rhs(i) +=
-          (biot_coef*pressure_values[q_point] *
+          (data.biot_coef*pressure_values[q_point] *
            trace(strain_tensor_i)) * jxw;
 
 

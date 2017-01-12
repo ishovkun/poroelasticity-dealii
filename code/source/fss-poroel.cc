@@ -42,27 +42,6 @@
 
 
 namespace PoroElasticity {
-  // elastic constants
-  double E = 7e9;
-  double nu = 0.25;
-  double biot_coef =0.9;
-  double permeability = 1e-9;
-  double initial_porosity = 30;
-  double viscosity = 1e-3;
-  double bulk_density = 2100;
-  double fluid_compressibility = 0.00689475729;  // 1e-6 psi
-  double time_step = 60*60*24;
-  double r_well = 0.5;
-  double flow_rate = 1e-2;
-  double t_max = time_step*100;
-
-  double lame_constant = E*nu/((1.+nu)*(1.-2.*nu));
-  double shear_modulus = 0.5*E/(1+nu);
-  double bulk_modulus = lame_constant + 2./3.*shear_modulus;
-  double grain_bulk_modulus = bulk_modulus/(1 - bulk_modulus);
-  double n_modulus = grain_bulk_modulus/(biot_coef - initial_porosity);
-  double m_modulus = (n_modulus/fluid_compressibility) /
-    (n_modulus*initial_porosity + 1./fluid_compressibility);
 
   unsigned int bottom = 0, right = 1, top = 2, left = 3;
 
@@ -113,7 +92,9 @@ namespace PoroElasticity {
     void refine_mesh(const unsigned int min_grid_level,
                      const unsigned int max_grid_level);
 
+    // variables
     Triangulation<dim>                          triangulation;
+    input_data::InputDataPoroel<dim>            data;
     solvers::PoroElasticPressureSolver<dim>     pressure_solver;
     solvers::PoroElasticDisplacementSolver<dim> displacement_solver;
     projection::StrainProjector<dim>            strain_projector;
@@ -131,8 +112,8 @@ namespace PoroElasticity {
 
   template <int dim>
   PoroElasticProblem<dim>::PoroElasticProblem() :
-    pressure_solver(triangulation),
-    displacement_solver(triangulation)
+    pressure_solver(triangulation, data),
+    displacement_solver(triangulation, data)
   {
     n_stress_components = 0.5*(dim*dim + dim);
     switch (dim) {
@@ -194,7 +175,7 @@ namespace PoroElasticity {
   void PoroElasticProblem<dim>::update_volumetric_strain()
   {
     pressure_solver.tmp1 = pressure_solver.solution_update;
-    pressure_solver.tmp1 *= (biot_coef/bulk_modulus);
+    pressure_solver.tmp1 *= (data.biot_coef/data.bulk_modulus);
     volumetric_strain += pressure_solver.tmp1;
   }
 
@@ -214,7 +195,8 @@ namespace PoroElasticity {
   {
     SymmetricTensor<2,dim> node_strain_tensor, node_stress_tensor;
     SymmetricTensor<4,dim> gassman_tensor =
-      constitutive_model::isotropic_gassman_tensor<dim>(lame_constant, shear_modulus);
+      constitutive_model::isotropic_gassman_tensor<dim>(data.lame_constant,
+                                                        data.shear_modulus);
 
     // iterate over nodes
     unsigned int pressure_n_dofs = pressure_solver.dof_handler.n_dofs();
@@ -244,58 +226,83 @@ namespace PoroElasticity {
       }  // end loop over nodes
   }  // EOM
 
-  // template <int dim>
-  // void PoroElasticProblem<dim>::output_results(const unsigned int time_step_number)
-  // {
-  //   std::vector<std::string> displacement_names(dim, "u");
 
-  //   std::vector<DataComponentInterpretation::DataComponentInterpretation>
-  //   displacement_component_interpretation
-  //     (dim, DataComponentInterpretation::component_is_part_of_vector);
+  template <int dim>
+  void PoroElasticProblem<dim>::output_results(const unsigned int time_step_number)
+  {
+    std::vector<std::string> displacement_names(dim, "u");
 
-  //   DataOut<dim> data_out;
-  //   data_out.add_data_vector(displacement_dof_handler, displacement_solution,
-  //                            displacement_names,
-  //                            displacement_component_interpretation);
+    std::vector<DataComponentInterpretation::DataComponentInterpretation>
+    displacement_component_interpretation
+      (dim, DataComponentInterpretation::component_is_part_of_vector);
 
-  //   data_out.add_data_vector(pressure_dof_handler, pressure_solution, "p");
+    DataOut<dim> data_out;
+    data_out.add_data_vector(displacement_solver.dof_handler,
+                             displacement_solver.solution,
+                             displacement_names,
+                             displacement_component_interpretation);
 
-  //   data_out.add_data_vector(pressure_dof_handler, strains[0], "eps_xx");
-  //   data_out.add_data_vector(pressure_dof_handler, stresses[0], "sigma_xx");
+    data_out.add_data_vector(pressure_solver.dof_handler,
+                             pressure_solver.solution, "p");
 
-  //   switch (dim) {
-  //   case 2:
-  //     data_out.add_data_vector(pressure_dof_handler, strains[1], "eps_xy");
-  //     data_out.add_data_vector(pressure_dof_handler, strains[2], "eps_yy");
-  //     data_out.add_data_vector(pressure_dof_handler, stresses[1], "sigma_xy");
-  //     data_out.add_data_vector(pressure_dof_handler, stresses[2], "sigma_yy");
-  //     break;
-  //   case 3:
-  //     data_out.add_data_vector(pressure_dof_handler, stresses[1], "sigma_xy");
-  //     data_out.add_data_vector(pressure_dof_handler, stresses[2], "sigma_xz");
-  //     data_out.add_data_vector(pressure_dof_handler, stresses[3], "sigma_yy");
-  //     data_out.add_data_vector(pressure_dof_handler, stresses[4], "sigma_yz");
-  //     data_out.add_data_vector(pressure_dof_handler, stresses[5], "sigma_zz");
-  //     break;
-  //   }
+    data_out.add_data_vector(pressure_solver.dof_handler,
+                             pressure_solver.strains[0], "eps_xx");
+    data_out.add_data_vector(pressure_solver.dof_handler,
+                             stresses[0], "sigma_xx");
+    switch (dim) {
+    case 2:
+      data_out.add_data_vector(pressure_solver.dof_handler,
+                               pressure_solver.strains[1], "eps_xy");
+      data_out.add_data_vector(pressure_solver.dof_handler,
+                               pressure_solver.strains[2], "eps_yy");
+      data_out.add_data_vector(pressure_solver.dof_handler,
+                               stresses[1], "sigma_xy");
+      data_out.add_data_vector(pressure_solver.dof_handler,
+                               stresses[0], "sigma_yy");
+      break;
+    case 3:
+      data_out.add_data_vector(pressure_solver.dof_handler,
+                               pressure_solver.strains[1], "eps_xy");
+      data_out.add_data_vector(pressure_solver.dof_handler,
+                               pressure_solver.strains[2], "eps_xz");
+      data_out.add_data_vector(pressure_solver.dof_handler,
+                               pressure_solver.strains[3], "eps_yy");
+      data_out.add_data_vector(pressure_solver.dof_handler,
+                               pressure_solver.strains[4], "eps_yz");
+      data_out.add_data_vector(pressure_solver.dof_handler,
+                               pressure_solver.strains[5], "eps_zz");
+      data_out.add_data_vector(pressure_solver.dof_handler,
+                               stresses[1], "sigma_xy");
+      data_out.add_data_vector(pressure_solver.dof_handler,
+                               stresses[2], "sigma_xz");
+      data_out.add_data_vector(pressure_solver.dof_handler,
+                               stresses[3], "sigma_yy");
+      data_out.add_data_vector(pressure_solver.dof_handler,
+                               stresses[4], "sigma_yz");
+      data_out.add_data_vector(pressure_solver.dof_handler,
+                               stresses[5], "sigma_zz");
+      break;
+    }
 
-  //   data_out.build_patches(std::min(displacement_fe.degree,
-  //                                   pressure_fe.degree));
-  //   std::ostringstream filename;
-  //   filename << "./solution/solution-" <<
-  //     Utilities::int_to_string(time_step_number, 4) << ".vtk";
-  //   std::ofstream output (filename.str().c_str());
-  //   data_out.write_vtk(output);
-  // }
+    data_out.build_patches(std::min(displacement_solver.fe.degree,
+                                    pressure_solver.fe.degree));
+    std::ostringstream filename;
+    filename << "./solution/solution-" <<
+      Utilities::int_to_string(time_step_number, 4) << ".vtk";
+    std::ofstream output (filename.str().c_str());
+    data_out.write_vtk(output);
+  }
 
 
   template <int dim>
   void PoroElasticProblem<dim>::run()
   {
-    const unsigned int initial_global_refinement = 1;
-    const unsigned int n_adaptive_pre_refinement_steps = 3;
+    // data.get_data();
+    data.read_input_file("input.data");
     read_mesh();
 
+    const unsigned int initial_global_refinement = 1;
+    const unsigned int n_adaptive_pre_refinement_steps = 3;
     triangulation.refine_global(initial_global_refinement);
 
     displacement_solver.set_boundary_conditions(
@@ -315,6 +322,7 @@ namespace PoroElasticity {
     strain_projector.assemble_projection_matrix();
 
     double time = 0;
+    double time_step = data.time_step;
     unsigned int time_step_number = 0;
     double fss_TOL = 1e-8;
     double pressure_TOL = 1e-8;

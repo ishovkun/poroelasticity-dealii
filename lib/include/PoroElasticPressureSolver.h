@@ -4,6 +4,9 @@
 #include <deal.II/fe/fe_system.h>
 #include <deal.II/fe/fe_q.h>
 
+// custom modules
+#include <InputDataPoroel.h>
+
 
 namespace solvers {
   using namespace dealii;
@@ -13,6 +16,7 @@ namespace solvers {
   // methods
   public:
     PoroElasticPressureSolver(Triangulation<dim> &triangulation,
+                              input_data::InputDataPoroel<dim> &data_,
                               int fe_degree = 1);
     ~PoroElasticPressureSolver();
 
@@ -34,14 +38,18 @@ namespace solvers {
     SparsityPattern       sparsity_pattern;
     ConstraintMatrix      constraints;
     SparseMatrix<double>  mass_matrix, laplace_matrix, jacobian;
+    input_data::InputDataPoroel<dim> &data;
 
   };
+
 
   template <int dim>
   PoroElasticPressureSolver<dim>::
   PoroElasticPressureSolver(Triangulation<dim> &triangulation,
+                            input_data::InputDataPoroel<dim> &data_,
                             int fe_degree) :
   dof_handler(triangulation),
+  data(data_),
   fe(fe_degree)
   {}
 
@@ -103,31 +111,37 @@ namespace solvers {
     (double time_step,
      Vector<double> &volumetric_strain)
   {
-    double biot_coef = 0.8, m_modulus = 1e6;
-    double permeability = 1e-12, viscosity = 1e-3, r_well = 0.1;
-
+    /* std::cout << "Factors: " */
+    /*           << data.biot_coef << "\t" */
+    /*           << data.time_step << "\t" */
+    /*           << data.perm << "\t" */
+    /*           << data.visc << "\t" */
+    /*           << data.r_well << "\t" */
+    /*           << data.m_modulus << "\t" */
+    /*           << std::endl; */
     // Coupling terms
     tmp1 = volumetric_strain;
-    tmp1 *= (biot_coef/time_step);
-
+    /* std::cout << "Pass1" << std::endl; */
+    tmp1 *= (data.biot_coef/time_step);
+    /* std::cout << "Pass2" << std::endl; */
 
     // Accumulation term
     tmp2 = solution;
     tmp2 -= old_solution;
-    tmp2 *= (1./m_modulus/time_step);
+    tmp2 *= (1./data.m_modulus/time_step);
     tmp1 += tmp2;
     mass_matrix.vmult(residual, tmp1);
 
     // Diffusive flow term
     laplace_matrix.vmult(tmp1, solution);
-    double factor = permeability/viscosity;
+    double factor = data.perm/data.visc;
     tmp1 *= factor;
     residual += tmp1;
 
     // Source term
-    right_hand_side::SinglePhaseWell<dim> source_term_function(r_well);
+    right_hand_side::SinglePhaseWell<dim> source_term_function(data.r_well);
     VectorTools::create_right_hand_side(dof_handler,
-                                        QGauss<dim>(fe.degree+1),
+                                        QGauss<dim>(fe.degree + 1),
                                         source_term_function,
                                         tmp1);
     residual += tmp1;
@@ -141,14 +155,12 @@ namespace solvers {
   template <int dim>
   void PoroElasticPressureSolver<dim>::assemble_jacobian(double time_step)
   {
-    double biot_coef = 0.8, m_modulus = 1e6;
-    double permeability = 1e-12, viscosity = 1e-3, r_well = 0.1;
     // Accumulation term
     jacobian.copy_from(mass_matrix);
-    jacobian *= (1./m_modulus/time_step);
+    jacobian *= (1./data.m_modulus/time_step);
 
     // Diffusive flow term
-    double factor = permeability/viscosity;
+    double factor = data.perm/data.visc;
     jacobian.add(factor, laplace_matrix);
     constraints.condense(jacobian);
   } // EOM
