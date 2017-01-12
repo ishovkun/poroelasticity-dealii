@@ -1,0 +1,24 @@
+subsection In Situ
+  set Pinit = 10e6
+end
+
+
+subsection Properties
+  set Young modulus         = 1.4e10
+  set Biot coefficient      = 0.9
+  set Bulk density          = 2700          
+  set Flow rate             = 0.01
+  set Fluid compressibility = 45.8e-11   # for water
+  set Permeability          = 1          # in mDa
+  set Poisson ratio         = 0.3
+  set Porosity              = 0.3
+  set Viscosity             = 1e-3
+  set Well radius           = 0.1
+end
+
+
+subsection Solver
+  set Time step  = 60
+  set Time max = 60
+end
+
