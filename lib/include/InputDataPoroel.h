@@ -25,7 +25,7 @@ namespace input_data {
     }
 
 
-  template <int dim> class InputDataPoroel
+  class InputDataPoroel
   {
     // methods
   public:
@@ -44,6 +44,10 @@ namespace input_data {
     std::string      input_file_name;
 
   public:
+    // mesh data
+    int dim;
+    std::vector<double> domain_size;  // sizes
+    int initial_refinement_level, max_refinement_level;
     // Equation data
     double perm, poro, visc, f_comp;
     double youngs_modulus, poisson_ratio, biot_coef;
@@ -66,30 +70,34 @@ namespace input_data {
   };  // End of class declaration
 
 
-  template <int dim>
-  InputDataPoroel<dim>::InputDataPoroel()
+  InputDataPoroel::InputDataPoroel()
   {}  // EOM
 
 
-  template <int dim>
-    void InputDataPoroel<dim>::read_input_file(std::string input_file_name_)
+  void InputDataPoroel::read_input_file(std::string input_file_name_)
   {
     input_file_name = input_file_name_;
     declare_parameters();
     prm.read_input(input_file_name);
-    prm.print_parameters (std::cout, ParameterHandler::Text);
+    prm.print_parameters(std::cout, ParameterHandler::Text);
     assign_parameters();
     compute_derived_parameters();
     check_data();
   }  // EOM
 
 
-  template <int dim>
-  void InputDataPoroel<dim>::declare_parameters()
+  void InputDataPoroel::declare_parameters()
   {
-    /* prm.enter_subsection("Mesh"); */
-    /* prm.leave_subsection(); */
+    { // Mesh section
+    prm.enter_subsection("Mesh");
+    prm.declare_entry("Dimensions", "2", Patterns::Integer(1, 3));
+    prm.declare_entry("Domain size", "10, 10",
+                      Patterns::List(Patterns::Double()));
+    prm.declare_entry("Initial refinement level", "3", Patterns::Integer(2));
+    prm.declare_entry("Max refinement level", "5", Patterns::Integer(2));
 
+    prm.leave_subsection();
+    }
     { // properties section
       prm.enter_subsection("Properties");
       prm.declare_entry("Young modulus", "7e9", Patterns::Double(1));
@@ -139,9 +147,17 @@ namespace input_data {
   }  // EOM
 
 
-  template <int dim>
-  void InputDataPoroel<dim>::assign_parameters()
+  void InputDataPoroel::assign_parameters()
   {
+    { // Mesh section
+      prm.enter_subsection("Mesh");
+      dim = prm.get_integer("Dimensions");
+      domain_size =
+        parse_string_list<double>(prm.get("Domain size"));
+      initial_refinement_level = prm.get_integer("Initial refinement level");
+      max_refinement_level = prm.get_integer("Max refinement level");
+      prm.leave_subsection();
+    }
     { // Properties section
       double mili_darcy = 9.869233e-16;
       prm.enter_subsection("Properties");
@@ -194,8 +210,7 @@ namespace input_data {
   }  // EOM
 
 
-  template <int dim>
-  void InputDataPoroel<dim>::compute_derived_parameters()
+  void InputDataPoroel::compute_derived_parameters()
   {
     double E = youngs_modulus, nu = poisson_ratio;
     lame_constant = E*nu/((1. + nu)*(1. - 2.*nu));
@@ -207,12 +222,13 @@ namespace input_data {
   }  // EOM
 
 
-  template <int dim>
-  void InputDataPoroel<dim>::check_data()
+  void InputDataPoroel::check_data()
   {
     double mili_darcy = 9.869233e-16;
-    /* Assert(perm < 10e3 && perm > 0, ) */
-    std::cout << "perm: " << perm/mili_darcy << " mD" << std::endl;
+    /* /\* Assert(perm < 10e3 && perm > 0, ) *\/ */
+    /* std::cout << "dim: " << dim << std::endl; */
+    /* std::cout << "perm: " << perm/mili_darcy << " mD" << std::endl; */
+    /* std::cout << "t_max: " << t_max << std::endl; */
     /* std::cout << "Params: " << std::endl */
     /*           << "f_comp " << f_comp << std::endl */
     /*           << "perm " << perm << std::endl */

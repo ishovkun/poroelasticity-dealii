@@ -5,7 +5,7 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/lib/include
   )
 
-ADD_EXECUTABLE(code source/fss-poroel.cc)
+ADD_EXECUTABLE(code source/Runner.cpp)
 DEAL_II_SETUP_TARGET(code)
 
 TARGET_LINK_LIBRARIES(code lib)

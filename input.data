@@ -1,7 +1,19 @@
-subsection In Situ
-  set Displacement boundary components = 1, 1, 0, 0
-  set Displacement boundary labels     = 0, 2, 3, 1
-  set Displacement boundary values     = 0, 0, 0, -0.1
+
+subsection Mesh
+  set Dimensions               = 2
+  set Domain size              = 10, 10
+  set Initial refinement level = 4
+  set Max refinement level     = 6
+end
+
+# Mesh Indicators:
+# the lower one in x-direction is 0, the upper one is 1.
+# The indicators for the surfaces in y-direction are 2 and 3, the ones for z are 4 and 5. 
+
+subsection In situ
+  set Displacement boundary labels     = 0, 1, 2, 3
+  set Displacement boundary components = 0, 0, 1, 1
+  set Displacement boundary values     = 0, -1e-5, 0, -1e-5
   set Initial pressure                 = 10e6
   set Stress boundary components       = 
   set Stress boundary labels           = 
@@ -25,6 +37,6 @@ end
 
 subsection Solver
   set Time step  = 60
-  set Time max = 120
+  set Time max   = 1e3
 end
 

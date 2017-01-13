@@ -16,7 +16,7 @@ namespace solvers {
   // methods
   public:
     PoroElasticDisplacementSolver(Triangulation<dim> &triangulation,
-                                  input_data::InputDataPoroel<dim> &data_,
+                                  input_data::InputDataPoroel &data_,
                                   int fe_degree = 2);
     ~PoroElasticDisplacementSolver();
 
@@ -53,14 +53,14 @@ namespace solvers {
     Vector<double>        rhs_vector;
     boundary_conditions::BoundaryConditions<dim> bc;
     bool rebuild_system_matrix;
-    input_data::InputDataPoroel<dim> &data;
+    input_data::InputDataPoroel &data;
   };
 
 
   template <int dim>
   PoroElasticDisplacementSolver<dim>::
   PoroElasticDisplacementSolver(Triangulation<dim> &triangulation,
-                                input_data::InputDataPoroel<dim> &data_,
+                                input_data::InputDataPoroel &data_,
                                 int fe_degree) :
     dof_handler(triangulation),
     data(data_),

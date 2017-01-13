@@ -16,7 +16,7 @@ namespace solvers {
   // methods
   public:
     PoroElasticPressureSolver(Triangulation<dim> &triangulation,
-                              input_data::InputDataPoroel<dim> &data_,
+                              input_data::InputDataPoroel &data_,
                               int fe_degree = 1);
     ~PoroElasticPressureSolver();
 
@@ -42,7 +42,7 @@ namespace solvers {
     SparsityPattern       sparsity_pattern;
     ConstraintMatrix      constraints;
     SparseMatrix<double>  mass_matrix, laplace_matrix, jacobian;
-    input_data::InputDataPoroel<dim> &data;
+    input_data::InputDataPoroel &data;
 
   };
 
@@ -50,7 +50,7 @@ namespace solvers {
   template <int dim>
   PoroElasticPressureSolver<dim>::
   PoroElasticPressureSolver(Triangulation<dim> &triangulation,
-                            input_data::InputDataPoroel<dim> &data_,
+                            input_data::InputDataPoroel &data_,
                             int fe_degree) :
   dof_handler(triangulation),
   data(data_),
