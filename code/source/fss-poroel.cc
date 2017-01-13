@@ -43,32 +43,9 @@
 
 namespace PoroElasticity {
 
-  unsigned int bottom = 0, right = 1, top = 2, left = 3;
-
-  // elasticity BC's
-  std::vector<unsigned int> displacement_dirichlet_labels =
-    {bottom, top, left, right};
-  std::vector<unsigned int> displacement_dirichlet_components =
-    {1, 1, 0, 0};
-  std::vector<double> displacement_dirichlet_values =
-    {0, 0, 0, -0.1};
-
-  std::vector<unsigned int> displacement_neumann_labels = {};
-  std::vector<unsigned int> displacement_neumann_components = {};
-  std::vector<double>       displacement_neumann_values      = {};
-
-  // pressure BC's
-  std::vector<unsigned int> pressure_dirichlet_labels     = {};
-  std::vector<unsigned int> pressure_dirichlet_components = {};
-  std::vector<double>       pressure_dirichlet_values     = {};
-
-  std::vector<unsigned int> pressure_neumann_labels     = {};
-  std::vector<unsigned int> pressure_neumann_components = {};
-  std::vector<double>       pressure_neumann_values     = {};
-
   using namespace dealii;
 
-  // ---------------------------- Problem ------------------------------------
+
   template <int dim>
   class PoroElasticProblem {
   public:
@@ -329,14 +306,6 @@ namespace PoroElasticity {
        data.displacement_boundary_labels,
        data.displacement_boundary_components,
        data.displacement_boundary_values);
-
-    // displacement_solver.set_boundary_conditions(
-    //     displacement_neumann_labels,
-    //     displacement_neumann_components,
-    //     displacement_neumann_values,
-    //     displacement_dirichlet_labels,
-    //     displacement_dirichlet_components,
-    //     displacement_dirichlet_values);
 
     setup_dofs();
     // return;

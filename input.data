@@ -1,5 +1,11 @@
 subsection In Situ
-  set Pinit = 10e6
+  set Displacement boundary components = 1, 1, 0, 0
+  set Displacement boundary labels     = 0, 2, 3, 1
+  set Displacement boundary values     = 0, 0, 0, -0.1
+  set Initial pressure                 = 10e6
+  set Stress boundary components       = 
+  set Stress boundary labels           = 
+  set Stress boundary values           = 
 end
 
 
