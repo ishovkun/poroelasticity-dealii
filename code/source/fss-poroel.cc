@@ -322,15 +322,24 @@ namespace PoroElasticity {
     const unsigned int n_adaptive_pre_refinement_steps = 3;
     triangulation.refine_global(initial_global_refinement);
 
-    displacement_solver.set_boundary_conditions(
-        displacement_neumann_labels,
-        displacement_neumann_components,
-        displacement_neumann_values,
-        displacement_dirichlet_labels,
-        displacement_dirichlet_components,
-        displacement_dirichlet_values);
+    displacement_solver.set_boundary_conditions
+      (data.stress_boundary_labels,
+       data.stress_boundary_components,
+       data.stress_boundary_values,
+       data.displacement_boundary_labels,
+       data.displacement_boundary_components,
+       data.displacement_boundary_values);
+
+    // displacement_solver.set_boundary_conditions(
+    //     displacement_neumann_labels,
+    //     displacement_neumann_components,
+    //     displacement_neumann_values,
+    //     displacement_dirichlet_labels,
+    //     displacement_dirichlet_components,
+    //     displacement_dirichlet_values);
 
     setup_dofs();
+    // return;
 
     // Initialize reservoir
     pressure_solver.solution = data.p_init;
@@ -400,9 +409,9 @@ namespace PoroElasticity {
             pressure_solver.assemble_jacobian(time_step);
             pressure_solver.solve();
             pressure_solver.solution += pressure_solver.solution_update;
-            std::cout << "Solution increment: "
-                      << pressure_solver.solution_update.linfty_norm() << "\t"
-                      << std::endl;
+            // std::cout << "Solution increment: "
+            //           << pressure_solver.solution_update.linfty_norm() << "\t"
+            //           << std::endl;
 
           } // end pressure iterations
 

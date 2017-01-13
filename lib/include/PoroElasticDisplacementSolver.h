@@ -26,11 +26,11 @@ namespace solvers {
 
     void assemble_system(Vector<double> &pressure_solution);
     void set_boundary_conditions(
-      std::vector<unsigned int> neumann_labels,
-      std::vector<unsigned int> neumann_components,
+      std::vector<int> neumann_labels,
+      std::vector<int> neumann_components,
       std::vector<double>       neumann_values,
-      std::vector<unsigned int> dirichlet_labels,
-      std::vector<unsigned int> dirichlet_components,
+      std::vector<int> dirichlet_labels,
+      std::vector<int> dirichlet_components,
       std::vector<double>       dirichlet_values
     );
 
@@ -77,11 +77,11 @@ namespace solvers {
 
   template <int dim>
   void PoroElasticDisplacementSolver<dim>::set_boundary_conditions(
-    std::vector<unsigned int> neumann_labels,
-    std::vector<unsigned int> neumann_components,
+    std::vector<int> neumann_labels,
+    std::vector<int> neumann_components,
     std::vector<double>       neumann_values,
-    std::vector<unsigned int> dirichlet_labels,
-    std::vector<unsigned int> dirichlet_components,
+    std::vector<int> dirichlet_labels,
+    std::vector<int> dirichlet_components,
     std::vector<double>       dirichlet_values)
   {
     bc.set_dirichlet (dirichlet_labels,

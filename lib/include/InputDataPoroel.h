@@ -1,7 +1,28 @@
 #include <deal.II/base/parameter_handler.h>
+#include <boost/algorithm/string.hpp>
+
 
 namespace input_data {
   using namespace dealii;
+
+
+  template<typename T>
+  std::vector<T> parse_string_list(std::string list_string,
+                                   std::string delimiter = ",")
+    {
+      std::vector<T> list;
+      T item;
+      if (list_string.size() == 0) return list;
+      std::vector<std::string> strs;
+      boost::split(strs, list_string, boost::is_any_of(delimiter));
+
+      for (const auto &string_item : strs){
+        std::stringstream convert(string_item);
+        convert >> item;
+        list.push_back(item);
+      }
+      return list;
+    }
 
 
   template <int dim> class InputDataPoroel
@@ -15,6 +36,7 @@ namespace input_data {
     void assign_parameters();
     void compute_derived_parameters();
     void check_data();
+    /* std::vector<int> parse_boundary_labels(std::string); */
 
     // variables
   private:
@@ -33,6 +55,9 @@ namespace input_data {
     int max_fss_iterations, max_pressure_iterations;
     // In situ
     double p_init;
+    std::vector<int>    stress_boundary_labels, displacement_boundary_labels;
+    std::vector<int> stress_boundary_components, displacement_boundary_components;
+    std::vector<double> stress_boundary_values, displacement_boundary_values;
 
     // Derived equation parameters
     double lame_constant, shear_modulus, bulk_modulus,
@@ -65,33 +90,49 @@ namespace input_data {
     /* prm.enter_subsection("Mesh"); */
     /* prm.leave_subsection(); */
 
-    {
+    { // properties section
       prm.enter_subsection("Properties");
-      prm.declare_entry("Young modulus", "7e9", Patterns::Double());
-      prm.declare_entry("Poisson ratio", "0.3", Patterns::Double());
-      prm.declare_entry("Biot coefficient", "0.9", Patterns::Double());
-      prm.declare_entry("Permeability", "1", Patterns::Double());
-      prm.declare_entry("Porosity", "0.3", Patterns::Double());
-      prm.declare_entry("Viscosity", "1e-3", Patterns::Double());
-      prm.declare_entry("Bulk density", "2700", Patterns::Double());
-      prm.declare_entry("Fluid compressibility", "45.8e-11", Patterns::Double());
-      prm.declare_entry("Well radius", "0.1", Patterns::Double());
-      prm.declare_entry("Flow rate", "0.1", Patterns::Double());
+      prm.declare_entry("Young modulus", "7e9", Patterns::Double(1));
+      prm.declare_entry("Poisson ratio", "0.3", Patterns::Double(0, 0.5));
+      prm.declare_entry("Biot coefficient", "0.9", Patterns::Double(0.1, 1));
+      prm.declare_entry("Permeability", "1", Patterns::Double(1e-20, 1e5));
+      prm.declare_entry("Porosity", "0.3", Patterns::Double(1e-5, 0.99999));
+      prm.declare_entry("Viscosity", "1e-3", Patterns::Double(1e-6, 1));
+      prm.declare_entry("Bulk density", "2700", Patterns::Double(5e2, 1e4));
+      prm.declare_entry("Fluid compressibility", "45.8e-11", Patterns::Double(1e-16, 1e-2));
+      prm.declare_entry("Well radius", "0.1", Patterns::Double(1e-2));
+      prm.declare_entry("Flow rate", "1e-6", Patterns::Double());
       prm.leave_subsection();
     }
-    {
+    { // In situ section - BC's & IC's
       prm.enter_subsection("In situ");
-      prm.declare_entry("Initial pressure", "10e6", Patterns::Double());
+      prm.declare_entry("Initial pressure", "10e6", Patterns::Double(0));
+      // Stress (neumann) boundaries
+      prm.declare_entry("Stress boundary labels", "",
+                        Patterns::List(Patterns::Integer()));
+      prm.declare_entry("Stress boundary components", "",
+                        Patterns::List(Patterns::Integer(0, 2)));
+      prm.declare_entry("Stress boundary values", "",
+                        Patterns::List(Patterns::Double()));
+      // Displacement (dirichlet) boundaries
+      prm.declare_entry("Displacement boundary labels", "0, 2, 3, 1",
+                        Patterns::List(Patterns::Integer()));
+      prm.declare_entry("Displacement boundary components", "1, 1, 0, 0",
+                        Patterns::List(Patterns::Integer(0, 2)));
+      prm.declare_entry("Displacement boundary values", "0, 0, 0, -0.1",
+                      Patterns::List(Patterns::Double()));
       prm.leave_subsection();
     }
-    {
+    { // solver section
       prm.enter_subsection("Solver");
-      prm.declare_entry("Time step", "60", Patterns::Double());
-      prm.declare_entry("Time max", "60", Patterns::Double());
-      prm.declare_entry("Max FSS iterations", "50", Patterns::Integer(3, 1000));
-      prm.declare_entry("Max pressure iterations", "50", Patterns::Integer(3, 1000));
-      prm.declare_entry("FSS tolerance", "1e-8", Patterns::Double(1e-16, 1e-5));
-      prm.declare_entry("Pressure tolerance", "1e-8", Patterns::Double(1e-16, 1e-5));
+      prm.declare_entry("Time step", "60", Patterns::Double(1e-8));
+      prm.declare_entry("Time max", "60", Patterns::Double(1e-8));
+      prm.declare_entry("Max FSS iterations", "50", Patterns::Integer(1, 1000));
+      prm.declare_entry("Max pressure iterations", "50", Patterns::Integer(1, 1000));
+      prm.declare_entry("FSS tolerance", "1e-8", Patterns::Double(1e-20, 1e-1));
+      prm.declare_entry("Pressure tolerance", "1e-8", Patterns::Double(1e-20, 1e-1));
+      /* prm.declare_entry("Displacement FE degree", "2", Patterns::Integer(1, 4)); */
+      /* prm.declare_entry("Pressure FE degree", "2", Patterns::Integer(1, 4)); */
       prm.leave_subsection();
     }
 
@@ -117,9 +158,27 @@ namespace input_data {
       flow_rate = prm.get_double("Flow rate");
       prm.leave_subsection();
     }
-    {
+    { // In situ section
       prm.enter_subsection("In situ");
       p_init = prm.get_double("Initial pressure");
+      // Stress (neumann) boundaries
+      stress_boundary_labels =
+        parse_string_list<int>(prm.get("Stress boundary labels"));
+      stress_boundary_components =
+        parse_string_list<int>(prm.get("Stress boundary components"));
+      stress_boundary_values =
+        parse_string_list<double>(prm.get("Stress boundary values"));
+      // Displacement (dirichlet) boundaries
+      displacement_boundary_labels =
+        parse_string_list<int>(prm.get("Displacement boundary labels"));
+      displacement_boundary_components =
+        parse_string_list<int>(prm.get("Displacement boundary components"));
+      displacement_boundary_values =
+        parse_string_list<double>(prm.get("Displacement boundary values"));
+
+      // debug with
+      /* for (auto &item: stress_boundary_components) */
+      /*   std::cout << item << std::endl; */
       prm.leave_subsection();
     }
     { // Solver section
@@ -149,21 +208,21 @@ namespace input_data {
 
 
   template <int dim>
-    void InputDataPoroel<dim>::check_data()
-    {
-      double mili_darcy = 9.869233e-16;
-      /* Assert(perm < 10e3 && perm > 0, ) */
-      std::cout << "perm: " << perm/mili_darcy << " mD" << std::endl;
-      /* std::cout << "Params: " << std::endl */
-      /*           << "f_comp " << f_comp << std::endl */
-      /*           << "perm " << perm << std::endl */
-      /*           << "lambda " << lame_constant << std::endl */
-      /*           << "G " << shear_modulus << std::endl */
-      /*           << "K " << bulk_modulus << std::endl */
-      /*           << "Ks " << grain_bulk_modulus << std::endl */
-      /*           << "N " << n_modulus << std::endl */
-      /*           << "M " << m_modulus << std::endl; */
+  void InputDataPoroel<dim>::check_data()
+  {
+    double mili_darcy = 9.869233e-16;
+    /* Assert(perm < 10e3 && perm > 0, ) */
+    std::cout << "perm: " << perm/mili_darcy << " mD" << std::endl;
+    /* std::cout << "Params: " << std::endl */
+    /*           << "f_comp " << f_comp << std::endl */
+    /*           << "perm " << perm << std::endl */
+    /*           << "lambda " << lame_constant << std::endl */
+    /*           << "G " << shear_modulus << std::endl */
+    /*           << "K " << bulk_modulus << std::endl */
+    /*           << "Ks " << grain_bulk_modulus << std::endl */
+    /*           << "N " << n_modulus << std::endl */
+    /*           << "M " << m_modulus << std::endl; */
 
-    }  // EOM
+  }  // EOM
 
 }  // end of namespace

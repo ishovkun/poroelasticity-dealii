@@ -8,33 +8,33 @@ namespace boundary_conditions {
   public:
     // BoundaryConditions();
     // ~BoundaryConditions();
-    void set_dirichlet(std::vector<unsigned int> &labels,
-                       std::vector<unsigned int> &components,
+    void set_dirichlet(std::vector<int> &labels,
+                       std::vector<int> &components,
                        std::vector<double>       &values);
-    void set_neumann(std::vector<unsigned int> &labels,
-                     std::vector<unsigned int> &components,
+    void set_neumann(std::vector<int> &labels,
+                     std::vector<int> &components,
                      std::vector<double>       &values);
 
-    std::vector<unsigned int>
+    std::vector<int>
       neumann_labels, dirichlet_labels,
       neumann_components, dirichlet_components;
     std::vector<double> dirichlet_values, neumann_values;
 
-    unsigned int n_dirichlet;
-    unsigned int n_neumann;
+    int n_dirichlet;
+    int n_neumann;
   };
 
   template <int dim>
   void BoundaryConditions<dim>::set_dirichlet (
-   std::vector<unsigned int> &labels,
-   std::vector<unsigned int> &components,
+   std::vector<int> &labels,
+   std::vector<int> &components,
    std::vector<double>       &values)
   {
     n_dirichlet = labels.size();
     ExcDimensionMismatch(components.size(), n_dirichlet);
     ExcDimensionMismatch(values.size(), n_dirichlet);
 
-    for (unsigned int d=0; d<components.size(); ++d)
+    for (int d=0; d<components.size(); ++d)
       Assert(components[d] < dim, ExcNotImplemented());
 
     dirichlet_labels = labels;
@@ -44,15 +44,15 @@ namespace boundary_conditions {
 
   template <int dim>
   void BoundaryConditions<dim>::set_neumann(
-     std::vector<unsigned int> &labels,
-     std::vector<unsigned int> &components,
+     std::vector<int> &labels,
+     std::vector<int> &components,
      std::vector<double>       &values)
   {
     n_neumann = labels.size();
     ExcDimensionMismatch(components.size(), n_neumann);
     ExcDimensionMismatch(values.size(), n_neumann);
 
-    for (unsigned int d=0; d<components.size(); ++d){
+    for (int d=0; d<components.size(); ++d){
       Assert(components[d] < dim, ExcNotImplemented());
     }
 
